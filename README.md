@@ -15,7 +15,7 @@ modules are organized by category, such as compute, database, storage, and
 security. Below is a list of available modules with their respective categories
 and locations within the repository.
 
-<!-- pyml disable-num-lines 12 md013 -->
+<!-- pyml disable-num-lines 13 md013 -->
 | Name | Category | Location | Description |
 |------|----------|----------|-------------|
 | [firewall_rules](modules/compute/firewall_rules) | compute | `modules/compute/firewall_rules` | A module to create firewall rules for GCP compute resources. |
@@ -23,6 +23,7 @@ and locations within the repository.
 | [gke_cluster](modules/compute/gke_cluster) | compute | `modules/compute/gke_cluster` | A module to create and manage GCP Kubernetes Engine clusters. |
 | [gke_node_pool](modules/compute/gke_node_pool) | compute | `modules/compute/gke_node_pool` | A module to create and manage GCP Kubernetes Engine node pools. |
 | [vpc_network](modules/compute/vpc_network) | compute | `modules/compute/vpc_network` | A module to create and manage GCP VPC networks. |
+| [cloudsql_instance](modules/database/cloudsql_instance) | database | `modules/database/cloudsql_instance` | A module to create and manage GCP Cloud SQL instances. |
 | [service_account](modules/iam/service_account) | iam | `modules/iam/service_account` | A module to create and manage GCP service accounts. |
 | [workload_identity_pool](modules/iam/workload_identity_pool) | iam | `modules/iam/workload_identity_pool` | A module to create and manage GCP Workload Identity Pools and associated providers. |
 | [folder](modules/platform/folder) | platform | `modules/platform/folder` | A module to create and manage GCP organizational folders. |
