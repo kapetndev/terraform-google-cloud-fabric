@@ -24,6 +24,10 @@ You will need the following things properly installed on your computer:
 
 - `make test`
 
+## Generating Documentation
+
+- `make docs`
+
 ## Making Changes
 
 See the contributing guide at
