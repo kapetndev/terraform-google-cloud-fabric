@@ -27,4 +27,7 @@ modules are organized by category, such as compute, database, storage, and
 security. Below is a list of available modules with their respective categories
 and locations within the repository.
 
-No modules.
+<!-- pyml disable-num-lines 3 md013 -->
+| Name | Category | Location | Description |
+|------|----------|----------|-------------|
+| [organization](modules/platform/organization) | platform | `modules/platform/organization` | A module to manage GCP organization policies. |
