@@ -1,0 +1,274 @@
+---
+name: terraform
+on:
+  pull_request:
+  push:
+    branches:
+    # This is run on merge queue branches as there are jobs listed in this
+    # action that are often required in branch protection rules. Due to guards
+    # below certain jobs may not run in merge queue branches but will still
+    # return a status indicating a pass.
+    - gh-readonly-queue/**
+    - master
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  MODULE_DIR: modules
+  TF_INPUT: 0
+  TF_IN_AUTOMATION: 1
+  TF_VERSION: 1.14.0
+jobs:
+  terraform-checks:
+    name: Run Terraform checks
+    runs-on: ubuntu-latest
+    outputs:
+      results: ${{ steps.aggregate.outputs.results }}
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    - name: Run tftest
+      uses: kepetndev/tftest@v0.1.0
+      with:
+        additional_args: -s --out tftest-results.json
+        format: json
+        working_directory: ${{ env.MODULE_DIR }}
+    - name: Run tfsec
+      uses: aquasecurity/tfsec-action@v1.0.3
+      with:
+        working_directory: ${{ env.MODULE_DIR }}
+        format: sarif
+        soft_fail: true
+        additional_args: --out tfsec-results.sarif
+    - name: Run Snyk IaC
+      if: env.SNYK_TOKEN != ''
+      uses: snyk/actions/iac@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        file: ${{ env.MODULE_DIR }}
+        sarif: true
+        args: --sarif-file-output=snyk-results.sarif --report
+      continue-on-error: true
+    - name: Parse SARIF and aggregate results
+      if: always()
+      run: |
+        # Transform tftest JSONL output into a JSON array, pivoting the
+        # per-check results array into flat fields on each module object.
+        #
+        # INPUT (one JSON object per line):
+        #   {"module":"modules/foo","results":[{"check":"structure","status":"passed",...},...]}
+        #
+        # OUTPUT (JSON array):
+        #   [{"module":"modules/foo","linting":"skipped","structure":"passed","formatting":"passed","validation":"passed"}]
+        jq -s 'map({module: .module, linting: "skipped"} + (.results | INDEX(.check) | with_entries(.value = .value.status)))' \
+          tftest-results.json > base-results.json
+
+        # extract_module_from_path <filepath>
+        #
+        # Given a file path from a SARIF result, extracts the module path (eg.
+        # modules/foo) by matching the MODULE_DIR prefix and first path
+        # segment. If the path doesn't match the expected format, returns an
+        # empty string which will be ignored in the counting step.
+        extract_module_from_path() {
+          local filepath="$1"
+          echo "${filepath}" | sed -E 's|^('"${MODULE_DIR}"'/[^/]+).*|\1|'
+        }
+
+        # process_sarif <tool> <sarif_file> <absent_status>
+        #
+        # Reads a SARIF file, counts findings per module, and merges the results
+        # into base-results.json. Modules with findings get <tool>="failed" and
+        # <tool>_issues=<count>. Modules with no findings get
+        # <tool>=<absent_status> and <tool>_issues=0. When the SARIF file is
+        # missing the absent status is applied to all modules without parsing.
+        process_sarif() {
+          local tool="$1"
+          local sarif_file="$2"
+          local absent_status="$3"
+          local counts_file="${tool}-counts.txt"
+
+          echo "### ${tool} Results"
+
+          if [[ -z "${sarif_file}" || ! -f "${sarif_file}" ]]; then
+            echo "No ${tool} results, marking all as ${absent_status}"
+            jq --arg tool "${tool}" --arg status "${absent_status}" \
+              'map(. + {($tool): $status, ("\($tool)_issues"): 0})' \
+              base-results.json > temp.json && mv temp.json base-results.json
+            return
+          fi
+
+          local total
+          total=$(jq '.runs[0].results | length' "${sarif_file}")
+          echo "Total ${tool} issues found: ${total}"
+
+          # Parse SARIF and count issues per module.
+          if [[ "${total}" -gt 0 ]]; then
+            jq -r '.runs[0].results[]? | .locations[0].physicalLocation.artifactLocation.uri' "${sarif_file}" \
+              | while read -r filepath; do
+                extract_module_from_path "${filepath}"
+              done | sort | uniq -c | while read -r count module; do
+                echo "${module}|${count}"
+              done > "${counts_file}"
+
+            # Add results to base JSON.
+            while IFS='|' read -r module count; do
+              jq --arg tool "${tool}" --arg mod "${module}" --argjson cnt "${count}" \
+                'map(if .module == $mod then . + {($tool): "failed", ("\($tool)_issues"): $cnt} else . end)' \
+                base-results.json > temp.json && mv temp.json base-results.json
+            done < "${counts_file}"
+          fi
+
+          # Modules not touched above had no findings.
+          jq --arg tool "${tool}" --arg status "${absent_status}" \
+            'map(if has($tool) | not then . + {($tool): $status, ("\($tool)_issues"): 0} else . end)' \
+            base-results.json > temp.json && mv temp.json base-results.json
+        }
+
+        process_sarif "tfsec" "tfsec-results.sarif" "passed"
+
+        if [[ -n "${{ env.SNYK_TOKEN }}" ]]; then
+          process_sarif "snyk" "snyk-results.sarif" "passed"
+        else
+          process_sarif "snyk" "" "skipped"
+        fi
+
+        # Output final results
+        echo "### Final Aggregated Results"
+        cat base-results.json | jq '.'
+
+        results=$(cat base-results.json | jq -c '.')
+        echo "results=${results}" >> $GITHUB_OUTPUT
+    - name: Upload tfsec SARIF
+      if: always() && hashFiles('tfsec-results.sarif') != ''
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: tfsec-results.sarif
+        category: tfsec
+      continue-on-error: true
+    - name: Upload Snyk SARIF
+      if: always() && env.SNYK_TOKEN != '' && hashFiles('snyk-results.sarif') != ''
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: snyk-results.sarif
+        category: snyk-iac
+      continue-on-error: true
+  terraform-summary:
+    name: Summarise Terraform checks
+    needs: [terraform-checks]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && always()
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+    - uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const results = JSON.parse('${{ needs.terraform-checks.outputs.results }}');
+
+          // Helper function to get status with link if there are issues
+          const getStatusCell = (status, issueCount, category) => {
+            const icon = status === 'passed' ? '✅' : status === 'failed' ? '❌' : status === 'skipped' ? '⏭️' : '❓';
+
+            if (status === 'failed' && issueCount > 0) {
+              const securityUrl = `https://github.com/${{ github.repository }}/security/code-scanning?query=is%3Aopen+tool%3A${category}`;
+              return `[${icon} ${issueCount}](${securityUrl})`;
+            }
+
+            return icon;
+          };
+
+          // Build table
+          let tableRows = results.map(result => {
+            const structureIcon = getStatusCell(result.structure, 0, 'structure');
+            const formattingIcon = getStatusCell(result.formatting, 0, 'formatting');
+            const validationIcon = getStatusCell(result.validation, 0, 'validation');
+            const lintingIcon = getStatusCell(result.linting, 0, 'linting');
+            const tfsecCell = getStatusCell(result.tfsec, result.tfsec_issues, 'tfsec');
+            const snykCell = getStatusCell(result.snyk, result.snyk_issues, 'Snyk');
+
+            return `| \`${result.module}\` | ${structureIcon} | ${formattingIcon} | ${validationIcon} | ${lintingIcon} | ${tfsecCell} | ${snykCell} |`;
+          }).join('\n');
+
+          // Calculate summary
+          const totalModules = results.length;
+          const passedModules = results.filter(result =>
+            result.structure === 'passed' &&
+            result.formatting === 'passed' &&
+            result.validation === 'passed' &&
+            result.tfsec === 'passed' &&
+            (result.snyk === 'passed' || result.snyk === 'skipped')
+          ).length;
+          const failedModules = totalModules - passedModules;
+
+          // Build the comment
+          let output = `## Terraform Module Validation Results
+
+          | Module | Structure | Formatting | Validation | Linting | tfsec | Snyk |
+          |--------|-----------|------------|------------|---------|-------|------|
+          ${tableRows}
+
+          **Summary:** modules: ${totalModules}, passed: ${passedModules}, failed: ${failedModules}`;
+
+          // Add security findings note
+          const hasSecurityFindings = results.some(result =>
+            (result.tfsec === 'failed' && result.tfsec_issues > 0) ||
+            (result.snyk === 'failed' && result.snyk_issues > 0)
+          );
+
+          if (hasSecurityFindings) {
+            output += `
+
+          ### 🔍 Security Findings
+
+          Security issues have been detected. Click the linked numbers in the tfsec/Snyk columns above to view detailed findings in the [Security tab](https://github.com/${{ github.repository }}/security/code-scanning).`;
+          }
+
+          output += '\n\n<!-- terraform-validation-summary -->';
+
+          // Find existing comment
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const existingComment = comments.find(comment =>
+            comment.user.type === 'Bot' && comment.body.includes('<!-- terraform-validation-summary -->')
+          );
+
+          if (existingComment) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existingComment.id,
+              body: output,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output,
+            });
+          }
+  verify:
+    name: Verify Terraform checks
+    needs: [terraform-checks]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Check results
+      run: |
+        if [[ "${{ needs.terraform-checks.result }}" == "failure" ]]; then
+          echo "❌ Checks failed"
+          exit 1
+        else
+          echo "✅ All checks passed"
+        fi
