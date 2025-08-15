@@ -1,15 +1,19 @@
 # terraform-google-cloud-fabric
 
-This README outlines the details of collaborating on this terraform module. A
-short introduction of this module could easily go here.
+This repository provides a collection of Terraform modules and complete
+architectural solutions to create and manage Google Cloud Platform (GCP)
+resources suitable for a variety of use cases.
 
-## Requirements
-
-| Name | Version |
-|------|---------|
-| [terraform](https://www.terraform.io/) | >= 1.0 |
+The purpose of this repository is to provide a foundation for building cloud
+infrastructure that is secure, scalable, and maintainable.
 
 ## Modules
+
+Modules provide the reusable components for building GCP resources. Each module
+is designed to be used independently or as part of a larger architecture. The
+modules are organized by category, such as compute, database, storage, and
+security. Below is a list of available modules with their respective categories
+and locations within the repository.
 
 No modules.
 
