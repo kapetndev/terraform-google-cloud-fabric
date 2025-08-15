@@ -27,10 +27,11 @@ modules are organized by category, such as compute, database, storage, and
 security. Below is a list of available modules with their respective categories
 and locations within the repository.
 
-<!-- pyml disable-num-lines 6 md013 -->
+<!-- pyml disable-num-lines 7 md013 -->
 | Name | Category | Location | Description |
 |------|----------|----------|-------------|
 | [service_account](modules/iam/service_account) | iam | `modules/iam/service_account` | A module to create and manage GCP service accounts. |
+| [workload_identity_pool](modules/iam/workload_identity_pool) | iam | `modules/iam/workload_identity_pool` | A module to create and manage GCP Workload Identity Pools and associated providers. |
 | [folder](modules/platform/folder) | platform | `modules/platform/folder` | A module to create and manage GCP organizational folders. |
 | [organization](modules/platform/organization) | platform | `modules/platform/organization` | A module to manage GCP organization policies. |
 | [project](modules/platform/project) | platform | `modules/platform/project` | A module to create and manage GCP projects. |
