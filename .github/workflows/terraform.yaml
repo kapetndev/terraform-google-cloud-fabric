@@ -1,0 +1,304 @@
+---
+name: terraform
+on:
+  pull_request:
+  push:
+    branches:
+    # This is run on merge queue branches as there are jobs listed in this
+    # action that are often required in branch protection rules. Due to guards
+    # below certain jobs may not run in merge queue branches but will still
+    # return a status indicating a pass.
+    - gh-readonly-queue/**
+    - master
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  TF_INPUT: 0
+  TF_IN_AUTOMATION: 1
+  TF_VERSION: 1.12.2
+jobs:
+  discover-modules:
+    name: Discover Terraform modules
+    runs-on: ubuntu-latest
+    outputs:
+      modules: ${{ steps.discover.outputs.modules }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Discover modules
+      id: discover
+      run: |
+        # Find all directories containing .tf files (excluding root)
+        modules=$(find modules -name "*.tf" -exec dirname {} \; | sort -u | grep -v "^\.$" | jq -R -s -c 'split("\n")[:-1]')
+        echo "modules=${modules}" >> $GITHUB_OUTPUT
+        echo "Found modules: ${modules}"
+  terraform-format:
+    name: Check Terraform formatting
+    runs-on: ubuntu-latest
+    outputs:
+      format-result: ${{ steps.fmt.outputs.format-result }}
+      format-diff: ${{ steps.fmt.outputs.format-diff }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    - name: Check formatting
+      id: fmt
+      run: |
+        # Capture diff output
+        terraform fmt -check -recursive -diff > format_output.txt 2>&1 || true
+        echo "format-diff<<EOF" >> $GITHUB_OUTPUT
+        cat format_output.txt >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+        # Check if there are formatting issues and set result
+        if terraform fmt -check -recursive; then
+          echo "format-result=success" >> $GITHUB_OUTPUT
+          echo "No formatting issues found"
+        else
+          echo "format-result=failure" >> $GITHUB_OUTPUT
+          echo "Formatting issues found"
+          exit 1
+        fi
+  terraform-module-checks:
+    name: Check Terraform modules
+    needs: [discover-modules]
+    runs-on: ubuntu-latest
+    outputs:
+      results: ${{ steps.collect-results.outputs.results }}
+    strategy:
+      matrix:
+        module: ${{ fromJson(needs.discover-modules.outputs.modules) }}
+      fail-fast: false
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    - name: Validate Terraform
+      id: validate
+      working-directory: ${{ matrix.module }}
+      run: |
+        echo "Validating module: ${{ matrix.module }}"
+        terraform init -backend=false
+        terraform validate
+    - name: Run tfsec
+      id: tfsec
+      uses: aquasecurity/tfsec-action@v1.0.3
+      with:
+        working_directory: ${{ matrix.module }}
+        soft_fail: true
+        format: sarif
+        additional_args: --out ${{ matrix.module }}/tfsec-results.sarif
+    - name: Run Snyk IaC
+      id: snyk
+      if: env.SNYK_TOKEN != ''
+      uses: snyk/actions/iac@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        file: ${{ matrix.module }}
+        sarif: true
+        args: --sarif-file-output=${{ matrix.module }}/snyk.sarif
+      continue-on-error: true
+    - name: Upload tfsec SARIF
+      if: always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ matrix.module }}/tfsec-results.sarif
+        category: tfsec-${{ matrix.module }}
+      continue-on-error: true
+    - name: Upload Snyk SARIF
+      if: always() && env.SNYK_TOKEN != ''
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ matrix.module }}/snyk.sarif
+        category: snyk-iac-${{ matrix.module }}
+      continue-on-error: true
+    - name: Collect results
+      id: collect-results
+      if: always()
+      run: |
+        module_name="${{ matrix.module }}"
+        validate_result="${{ steps.validate.outcome }}"
+        tfsec_result="${{ steps.tfsec.outcome }}"
+        snyk_result="${{ steps.snyk.outcome }}"
+
+        # If Snyk token not available, mark as skipped
+        if [[ -z "${{ env.SNYK_TOKEN }}" ]]; then
+          snyk_result="skipped"
+        fi
+
+        # Count issues from SARIF files
+        tfsec_issues=0
+        snyk_issues=0
+
+        if [[ -f "${{ matrix.module }}/tfsec-results.sarif" ]]; then
+          tfsec_issues=$(jq '.runs[0].results | length' "${{ matrix.module }}/tfsec-results.sarif" 2>/dev/null || echo "0")
+        fi
+
+        if [[ -f "${{ matrix.module }}/snyk.sarif" ]]; then
+          snyk_issues=$(jq '.runs[0].results | length' "${{ matrix.module }}/snyk.sarif" 2>/dev/null || echo "0")
+        fi
+
+        # Create JSON result
+        result=$(jq -n \
+          --arg module "$module_name" \
+          --arg validate "$validate_result" \
+          --arg tfsec "$tfsec_result" \
+          --arg snyk "$snyk_result" \
+          --argjson tfsec_issues "$tfsec_issues" \
+          --argjson snyk_issues "$snyk_issues" \
+          '{
+            module: $module,
+            format: $format,
+            validate: $validate,
+            tfsec: $tfsec,
+            snyk: $snyk,
+            tfsec_issues: $tfsec_issues,
+            snyk_issues: $snyk_issues
+          }')
+
+        echo "results=${result}" >> $GITHUB_OUTPUT
+  terraform-summary:
+    name: Summarize Terraform module checks
+    needs: [discover-modules, terraform-format, terraform-module-checks]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && always()
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+    - uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const moduleResults = ${{ toJson(needs.module-checks.outputs.results) }};
+          const formatResult = '${{ needs.terraform-format.outputs.format-result }}';
+          const formatDiff = `${{ needs.terraform-format.outputs.format-diff }}`.trim();
+
+          // Parse results from each matrix job
+          const results = Array.isArray(moduleResults) ? moduleResults : [moduleResults];
+          const parsedResults = results.map(result => {
+            if (typeof result === 'string') {
+              return JSON.parse(result);
+            }
+            return result;
+          }).filter(Boolean);
+
+          // Helper function to get status with link if there are issues
+          const getStatusCell = (status, issueCount, category, module) => {
+            const icon = status === 'success' ? '✅' : status === 'failure' ? '❌' : status === 'skipped' ? '⏭️' : '❓';
+
+            if (status === 'failure' && issueCount > 0) {
+              const securityUrl = `https://github.com/${{ github.repository }}/security/code-scanning?query=is%3Aopen+tool%3A${category}`;
+              return `[${icon} ${issueCount}](${securityUrl})`;
+            }
+
+            return icon;
+          };
+
+          // Build table
+          let tableRows = parsedResults.map(result => {
+            const validateIcon = result.validate === 'success' ? '✅' : '❌';
+            const tfsecCell = getStatusCell(result.tfsec, result.tfsec_issues, 'tfsec', result.module);
+            const snykCell = getStatusCell(result.snyk, result.snyk_issues, 'Snyk', result.module);
+
+            return `| \`${result.module}\` | ${validateIcon} | ${tfsecCell} | ${snykCell} |`;
+          }).join('\n');
+
+          // Calculate summary
+          const totalModules = parsedResults.length;
+          const passedModules = parsedResults.filter(result =>
+            formatResult === 'success' &&
+            result.validate === 'success' &&
+            result.tfsec === 'success' &&
+            (result.snyk === 'success' || result.snyk === 'skipped')
+          ).length;
+          const failedModules = totalModules - passedModules;
+
+          // Build the comment
+          let output = `## Terraform Module Validation Results
+
+          | Module | Validation | tfsec | Snyk |
+          |--------|------------|-------|------|
+          ${tableRows}
+
+          **Summary:** modules: ${totalModules}, passed: ${passedModules}, failed: ${failedModules}`;
+
+          // Add formatting diff if there are issues
+          if (formatResult === 'failure' && formatDiff) {
+            output += `
+
+          ### 📝 Formatting Issues
+
+          <details>
+          <summary>Click to view formatting diff</summary>
+
+          \`\`\`diff
+          ${formatDiff}
+          \`\`\`
+
+          **Fix:** Run \`terraform fmt -recursive\` to resolve formatting issues.
+          </details>`;
+          }
+
+          // Add security findings note
+          const hasSecurityFindings = parsedResults.some(result =>
+            (result.tfsec === 'failure' && result.tfsec_issues > 0) ||
+            (result.snyk === 'failure' && result.snyk_issues > 0)
+          );
+
+          if (hasSecurityFindings) {
+            output += `
+
+          ### 🔍 Security Findings
+
+          Security issues have been detected. Click the linked numbers in the tfsec/Snyk columns above to view detailed findings in the [Security tab](https://github.com/${{ github.repository }}/security/code-scanning).`;
+          }
+
+          output += '\n\n<!-- terraform-validation-summary -->';
+
+          // Find existing comment
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const existingComment = comments.find(comment =>
+            comment.user.type === 'Bot' && comment.body.includes('<!-- terraform-validation-summary -->')
+          );
+
+          if (existingComment) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existingComment.id,
+              body: output,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output,
+            });
+          }:
+  verify:
+    name: Verify Terraform module checks
+    needs: [terraform-format, terraform-module-checks]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+    - name: Check results
+      run: |
+        if [[ "${{ needs.terraform-format.result }}" == "failure" ]] || [[ "${{ needs.module-checks.result }}" == "failure" ]]; then
+          echo "❌ One or more checks failed"
+          exit 1
+        else
+          echo "✅ All checks passed"
+        fi
