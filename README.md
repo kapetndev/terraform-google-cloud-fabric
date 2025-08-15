@@ -27,10 +27,11 @@ modules are organized by category, such as compute, database, storage, and
 security. Below is a list of available modules with their respective categories
 and locations within the repository.
 
-<!-- pyml disable-num-lines 9 md013 -->
+<!-- pyml disable-num-lines 10 md013 -->
 | Name | Category | Location | Description |
 |------|----------|----------|-------------|
 | [firewall_rules](modules/compute/firewall_rules) | compute | `modules/compute/firewall_rules` | A module to create firewall rules for GCP compute resources. |
+| [gce_instance](modules/compute/gce_instance) | compute | `modules/compute/gce_instance` | A module to create and manage GCP Compute Engine instances. |
 | [vpc_network](modules/compute/vpc_network) | compute | `modules/compute/vpc_network` | A module to create and manage GCP VPC networks. |
 | [service_account](modules/iam/service_account) | iam | `modules/iam/service_account` | A module to create and manage GCP service accounts. |
 | [workload_identity_pool](modules/iam/workload_identity_pool) | iam | `modules/iam/workload_identity_pool` | A module to create and manage GCP Workload Identity Pools and associated providers. |
