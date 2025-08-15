@@ -15,7 +15,7 @@ modules are organized by category, such as compute, database, storage, and
 security. Below is a list of available modules with their respective categories
 and locations within the repository.
 
-<!-- pyml disable-num-lines 15 md013 -->
+<!-- pyml disable-num-lines 16 md013 -->
 | Name | Category | Location | Description |
 |------|----------|----------|-------------|
 | [firewall_rules](modules/compute/firewall_rules) | compute | `modules/compute/firewall_rules` | A module to create firewall rules for GCP compute resources. |
@@ -30,6 +30,7 @@ and locations within the repository.
 | [folder](modules/platform/folder) | platform | `modules/platform/folder` | A module to create and manage GCP organizational folders. |
 | [organization](modules/platform/organization) | platform | `modules/platform/organization` | A module to manage GCP organization policies. |
 | [project](modules/platform/project) | platform | `modules/platform/project` | A module to create and manage GCP projects. |
+| [kms](modules/security/kms) | security | `modules/security/kms` | A module to create and manage GCP Key Management Service (KMS) keys. |
 | [gcs_bucket](modules/storage/gcs_bucket) | storage | `modules/storage/gcs_bucket` | A module to create and manage GCP Cloud Storage buckets. |
 
 ## License
