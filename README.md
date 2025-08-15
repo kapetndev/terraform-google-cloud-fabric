@@ -1,4 +1,4 @@
-# terraform-google-cloud-fabric
+# terraform-google-cloud-fabric ![terraform](https://github.com/kapetndev/terraform-google-cloud-fabric/workflows/terraform/badge.svg)
 
 This repository provides a collection of Terraform modules and complete
 architectural solutions to create and manage Google Cloud Platform (GCP)

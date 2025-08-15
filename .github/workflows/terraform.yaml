@@ -1,0 +1,73 @@
+---
+name: terraform
+on:
+  pull_request:
+  push:
+    branches:
+    - master
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  MODULE_DIR: modules
+  TF_INPUT: 0
+  TF_IN_AUTOMATION: 1
+  TF_VERSION: 1.14.0
+jobs:
+  terraform-checks:
+    name: Run Terraform checks
+    runs-on: ubuntu-latest
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Run tftest
+      uses: kapetndev/tftest-action@v0.1.0
+      with:
+        working_directory: ${{ env.MODULE_DIR }}
+        format: json
+        terraform_version: ${{ env.TF_VERSION }}
+        additional_args: -rs --out tftest-results.json
+    - name: Run trivy in IaC mode
+      uses: aquasecurity/trivy-action@0.33.1
+      with:
+        scan-ref: ${{ env.MODULE_DIR }}
+        scan-type: config
+        hide-progress: true
+        format: sarif
+        output: trivy-results.sarif
+        severity: CRITICAL,HIGH
+    - name: Run Snyk IaC
+      if: env.SNYK_TOKEN != ''
+      uses: snyk/actions/iac@v1.0.0
+      with:
+        file: ${{ env.MODULE_DIR }}
+        sarif: true
+        args: --sarif-file-output=snyk-results.sarif --report
+      continue-on-error: true
+    - name: Report results
+      if: github.event_name == 'pull_request' && hashFiles('tftest-results.json') != ''
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const script = require('./.github/scripts/report-results.js');
+          await script({ github, context, core });
+    - name: Upload trivy SARIF
+      if: always() && hashFiles('trivy-results.sarif') != ''
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: trivy-results.sarif
+        category: trivy
+      continue-on-error: true
+    - name: Upload Snyk SARIF
+      if: always() && hashFiles('snyk-results.sarif') != ''
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: snyk-results.sarif
+        category: snyk
+      continue-on-error: true
