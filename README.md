@@ -1,14 +1,30 @@
 # terraform-google-cloud-fabric
 
-This README outlines the details of collaborating on this terraform module. A
-short introduction of this module could easily go here.
+This repository provides a collection of Terraform modules and complete
+architectural solutions to create and manage Google Cloud Platform (GCP)
+resources suitable for a variety of use cases.
 
-## Requirements
+The purpose of this repository is to provide a foundation for building cloud
+infrastructure that is secure, scalable, and maintainable.
 
-| Name | Version |
-|------|---------|
-| [terraform](https://www.terraform.io/) | >= 1.0 |
+## Blueprints
+
+Blueprints are complete, ready-to-use solutions that demonstrate how to deploy
+and manage GCP resources using Terraform. Each blueprint includes a set of
+modules and configurations that can be customized to fit specific requirements.
+
+The purpose of the blueprints is to establish best practices and provide
+examples of how to implement common GCP architectures. They can be used as a
+starting point for new projects or as a reference for existing deployments.
+
+Existing blueprints can be found in the [blueprints](blueprints) directory.
 
 ## Modules
+
+Modules provide the reusable components for building GCP resources. Each module
+is designed to be used independently or as part of a larger architecture. The
+modules are organized by category, such as compute, database, storage, and
+security. Below is a list of available modules with their respective categories
+and locations within the repository.
 
 No modules.
