@@ -25,6 +25,10 @@ You will need the following things properly installed on your computer:
 - `make check`
 - `make test`
 
+## Generating documentation
+
+- `make docs`
+
 ## Making Changes
 
 See the contributing guide at
