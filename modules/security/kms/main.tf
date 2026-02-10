@@ -51,9 +51,9 @@ resource "google_kms_crypto_key" "keys" {
   # Terraform-managed CryptoKey will remove it from state and delete all
   # CryptoKeyVersions, rendering the key unusable, but will not delete the
   # resource from the project. When Terraform destroys these keys, any data
-  # previously encrypted with these keys will be irrecoverable. For this
-  # reason, it is strongly recommended that you add lifecycle hooks to the
-  # resource to prevent accidental destruction.
+  # previously encrypted with these keys will be irrecoverable. For this reason,
+  # it is strongly recommended that you add lifecycle hooks to the resource to
+  # prevent accidental destruction.
   lifecycle {
     prevent_destroy = true
   }

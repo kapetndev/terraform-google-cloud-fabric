@@ -18,8 +18,8 @@ locals {
 
 resource "google_org_policy_policy" "policies" {
   for_each = local.policies
-  name     = "${var.organization_id}/policies/${each.value}"
-  parent   = var.organization_id
+  name     = "organizations/${var.organization_id}/policies/${each.key}"
+  parent   = "organizations/${var.organization_id}"
 
   dynamic "spec" {
     for_each = lookup(each.value, "dry_run", false) ? [] : [each.value]

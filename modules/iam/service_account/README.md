@@ -23,13 +23,13 @@ module "cloudsql_service_account" {
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.5 |
-| <a name="requirement_google"></a> [google](#requirement\_google) | >= 3.30.0 |
+| <a name="requirement_google"></a> [google](#requirement\_google) | >= 6.14.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_google"></a> [google](#provider\_google) | >= 3.30.0 |
+| <a name="provider_google"></a> [google](#provider\_google) | >= 6.14.0 |
 
 ## Resources
 
@@ -44,20 +44,22 @@ module "cloudsql_service_account" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_name"></a> [name](#input\_name) | The account id that is used to generate the service account email address and a stable unique id. It is unique within a project, must be 6-30 characters long, and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])` to comply with RFC1035. | `string` | n/a | yes |
+| <a name="input_account_id"></a> [account\_id](#input\_account\_id) | The account id that is used to generate the service account email address and a stable unique id. It is unique within a project, must be 6-30 characters long, and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])` to comply with RFC1035. | `string` | n/a | yes |
+| <a name="input_display_name"></a> [display\_name](#input\_display\_name) | Fully qualified, authoritative display name of the service account. | `string` | n/a | yes |
 | <a name="input_description"></a> [description](#input\_description) | A brief description of this resource. | `string` | `null` | no |
-| <a name="input_display_name"></a> [display\_name](#input\_display\_name) | A display name for the service account. Can be updated without creating a new resource. If not provided the value of `name` is used. | `string` | `null` | no |
-| <a name="input_group_iam"></a> [group\_iam](#input\_group\_iam) | Authoritative IAM binding for organization groups, in `{GROUP_EMAIL => [ROLES]}` format. Group emails must be static. Can be used in combination with the `iam` variable. | `map(set(string))` | `{}` | no |
+| <a name="input_group_iam"></a> [group\_iam](#input\_group\_iam) | Authoritative IAM binding for organisation groups, in `{GROUP_EMAIL => [ROLES]}` format. Group emails must be static. Can be used in combination with the `iam` variable. | `map(set(string))` | `{}` | no |
 | <a name="input_iam"></a> [iam](#input\_iam) | Authoritative IAM bindings in `{ROLE => [MEMBERS]}` format. | `map(set(string))` | `{}` | no |
-| <a name="input_iam_bindings"></a> [iam\_bindings](#input\_iam\_bindings) | Authoritative IAM bindings in `{KEY => {members = [MEMBERS], role = ROLE, condition = {}}}` format. Role/member pairs cannot appear in both this variable and `iam`. Keys are arbitrary. | <pre>map(object({<br/>    members = set(string)<br/>    role    = string<br/>    condition = optional(object({<br/>      description = optional(string)<br/>      expression  = string<br/>      title       = string<br/>    }))<br/>  }))</pre> | `{}` | no |
+| <a name="input_iam_bindings"></a> [iam\_bindings](#input\_iam\_bindings) | Authoritative IAM bindings in `{KEY => {members = [MEMBERS], role = ROLE, condition = {}}}` format. Role/member pairs cannot appear in both this variable and `iam`. Keys are arbitrary. | <pre>map(object({<br/>    members = set(string)<br/>    condition = optional(object({<br/>      description = optional(string)<br/>      expression  = string<br/>      title       = string<br/>    }))<br/>  }))</pre> | `{}` | no |
 | <a name="input_iam_members"></a> [iam\_members](#input\_iam\_members) | Non-authoritative IAM bindings in `{KEY => {member = MEMBER, role = ROLE, condition = {}}}` format. Can be used in combination with the `iam` and `iam_bindings` variables. Keys are arbitrary. | <pre>map(object({<br/>    member = string<br/>    role   = string<br/>    condition = optional(object({<br/>      description = optional(string)<br/>      expression  = string<br/>      title       = string<br/>    }))<br/>  }))</pre> | `{}` | no |
-| <a name="input_prefix"></a> [prefix](#input\_prefix) | An optional prefix applied to the service account name. | `string` | `null` | no |
-| <a name="input_project_id"></a> [project\_id](#input\_project\_id) | The ID of the project in which the resource belongs. If it is not provided, the provider project is used. | `string` | `null` | no |
+| <a name="input_project_id"></a> [project\_id](#input\_project\_id) | The ID of the GCP project in which to create the service account. Defaults to the provider project if not set. | `string` | `null` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| <a name="output_service_account_email"></a> [service\_account\_email](#output\_service\_account\_email) | The email address of the service account. |
+| <a name="output_email"></a> [email](#output\_email) | The email address of the service account. Use this when granting IAM roles to the service account, or when configuring Workload Identity bindings. |
+| <a name="output_id"></a> [id](#output\_id) | The fully qualified resource ID of the service account in the format `projects/PROJECT/serviceAccounts/EMAIL`. Use this when referencing the service account as a resource to bind IAM roles to. |
+| <a name="output_member"></a> [member](#output\_member) | The IAM member string for the service account in the format `serviceAccount:EMAIL`. Ready for use directly in IAM binding member lists. |
+| <a name="output_name"></a> [name](#output\_name) | The fully qualified name of the service account in the format `projects/PROJECT/serviceAccounts/EMAIL`. Use this when referencing the service account from other service account IAM bindings. |
 <!-- pyml enable md013,md022,md033 -->
 <!-- END_TF_DOCS -->

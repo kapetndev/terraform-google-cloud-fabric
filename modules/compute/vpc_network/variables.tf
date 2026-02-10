@@ -1,108 +1,149 @@
 variable "auto_create_subnetworks" {
-  description = "Whether to create a subnetwork for each compute region automatically across the `10.128.0.0/9` address range."
+  description = "When true, GCP automatically creates a subnetwork in each region across the `10.128.0.0/9` address range. Defaults to false — subnets should be managed explicitly via the subnets variable."
   type        = bool
   default     = false
+  nullable    = false
 }
 
 variable "delete_default_routes_on_create" {
-  description = "Whether to delete the default routes (`0.0.0.0/0`) immediately after the network is created."
+  description = "When true, the default internet route (`0.0.0.0/0`) is deleted immediately after the network is created. Recommended when all egress should be controlled explicitly via Cloud NAT or Cloud Router rather than permitting arbitrary internet egress."
   type        = bool
   default     = false
+  nullable    = false
 }
 
 variable "description" {
-  description = "A description of the network."
+  description = "A human-readable description of the network resource."
   type        = string
   default     = null
 }
 
 variable "enable_ula_internal_ipv6" {
-  description = "Whether to enable Unique Local Address (ULA) internal IPv6 connectivity. If enabled, a /48 ULA IPv6 range will be automatically allocated from google defined ULA prefix fd20::/20 and associated with this network."
+  description = "Enable Unique Local Address (ULA) internal IPv6 on the network. When enabled, a `/48` ULA range is allocated from Google's `fd20::/20` prefix and assigned to the network."
   type        = bool
   default     = false
+  nullable    = false
 }
 
 variable "internal_ipv6_range" {
-  description = "The internal IPv6 range in CIDR notation to be used by this network. The range must be a /48 prefix from google defined ULA prefix fd20::/20. If the field is not speficied, then a /48 range will be randomly allocated from fd20::/20 and returned via this field."
+  description = "A specific `/48` ULA IPv6 range from Google's `fd20::/20` prefix to assign to the network. Only valid when `enable_ula_internal_ipv6` is true. When null, GCP assigns a range automatically."
   type        = string
   default     = null
 }
 
 variable "mtu" {
-  description = "The maximum transmission unit (MTU) in bytes."
+  description = "Maximum transmission unit in bytes. Must be between 1300 and 8896. Use 1500 for standard Ethernet, or up to 8896 for Jumbo Frames on supported machine types. When null, GCP uses its default of 1460."
   type        = number
   default     = null
-}
-
-variable "name" {
-  description = "The name of the network, which must be unique within the project. The name must be 1-63 characters long, and comply with RFC1035. Specifically, the name must be 1-63 characters long and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])?`."
-  type        = string
-}
-
-variable "network_firewall_policy_enforcement_order" {
-  description = "The order that firewall rules and firewall policies are evaluated. Default value is `AFTER_CLASSIC_FIREWALL`. Possible values are: `AFTER_CLASSIC_FIREWALL`, `BEFORE_CLASSIC_FIREWALL`."
-  type        = string
-  default     = "AFTER_CLASSIC_FIREWALL"
   validation {
-    condition     = contains(["AFTER_CLASSIC_FIREWALL", "BEFORE_CLASSIC_FIREWALL"], var.network_firewall_policy_enforcement_order)
-    error_message = "network_firewall_policy_enforcement_order must be either AFTER_CLASSIC_FIREWALL or BEFORE_CLASSIC_FIREWALL"
+    condition     = var.mtu == null ? true : (var.mtu >= 1300 && var.mtu <= 8896)
+    error_message = "`mtu` must be between 1300 and 8896."
   }
 }
 
-variable "private_service_connect_ranges" {
-  description = "A map of IP address blocks (CIDR notation) that are allowed to use Private Service Connect. If the address is not given in CIDR notation, then a prefix length of 16 is used."
+variable "name" {
+  description = "Name of the VPC network. Must be 1-63 characters long, lowercase, and match `[a-z]([-a-z0-9]*[a-z0-9])?`. Must be unique within the project."
+  type        = string
+  nullable    = false
+}
+
+variable "network_firewall_policy_enforcement_order" {
+  description = "Evaluation order of firewall policies relative to classic (per-network) firewall rules. `AFTER_CLASSIC_FIREWALL` evaluates network firewall policies after classic rules; `BEFORE_CLASSIC_FIREWALL` evaluates them first."
+  type        = string
+  default     = "AFTER_CLASSIC_FIREWALL"
+  nullable    = false
+  validation {
+    condition     = contains(["AFTER_CLASSIC_FIREWALL", "BEFORE_CLASSIC_FIREWALL"], var.network_firewall_policy_enforcement_order)
+    error_message = "`network_firewall_policy_enforcement_order` must be one of `AFTER_CLASSIC_FIREWALL` or `BEFORE_CLASSIC_FIREWALL`."
+  }
+}
+
+variable "private_services_access_ranges" {
+  description = <<EOF
+IP address ranges (in CIDR notation) to reserve for Private Services Access.
+Private Services Access allocates these ranges in your VPC and peers them with
+Google's service producer network via `servicenetworking.googleapis.com`,
+enabling private connectivity to managed services such as Cloud SQL,
+Memorystore, and AlloyDB without traffic traversing the public internet.
+
+Each entry is a map of name => CIDR, e.g.:
+  { "google-managed-services" = "10.100.0.0/16" }
+
+Note: this is distinct from Private Service Connect, which uses forwarding rules
+and service attachments to reach Google APIs by private IP.
+EOF
   type        = map(string)
   default     = {}
+  nullable    = false
+  validation {
+    condition = alltrue([
+      for cidr in values(var.private_services_access_ranges) :
+      can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$", cidr))
+    ])
+    error_message = "all values must be valid CIDR blocks in the format `x.x.x.x/prefix`, e.g. `10.100.0.0/16`."
+  }
 }
 
 variable "project_id" {
-  description = "The ID of the project in which the resource belongs. If it is not provided, the provider project is used."
+  description = "The ID of the GCP project in which to create the network. Defaults to the provider project if not set."
   type        = string
   default     = null
 }
 
 variable "routing_mode" {
-  description = "The network-wide routing mode to use. If set to `REGIONAL`, this network's cloud routers will only advertise routes with subnetworks of this network in the same region as the router. If set to `GLOBAL`, this network's cloud routers will advertise routes with all subnetworks of this network, across regions. Possible values are: `GLOBAL`, `REGIONAL`."
+  description = "Network-wide routing mode. `REGIONAL` advertises only routes within the same region as the Cloud Router. `GLOBAL` advertises routes across all regions, required for global load balancing and multi-region topologies."
   type        = string
   default     = "REGIONAL"
+  nullable    = false
   validation {
     condition     = contains(["GLOBAL", "REGIONAL"], var.routing_mode)
-    error_message = "routing_mode must be either GLOBAL or REGIONAL"
+    error_message = "`routing_mode` must be one of `GLOBAL` or `REGIONAL`."
   }
 }
 
 variable "subnets" {
   description = <<EOF
-Subnets to create in the network.
+Subnets to create within the network. Multiple subnets may share a name across
+different regions - the resource key is region/name to ensure uniqueness.
 
-(Required) ip_cidr_range - The range of internal addresses that are owned by this subnetwork. Provide this property when you create the subnetwork. For example, `10.0.0.0/8` or `192.168.0.0/16`. Ranges must be unique and non-overlapping within a network. Only IPv4 is supported.
-(Required) name - The name of the resource, provided by the client when initially creating the resource. The name must be 1-63 characters long, and comply with RFC1035. Specifically, the name must be 1-63 characters long and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])?` which means the first character must be a lowercase letter, and all following characters must be a dash, lowercase letter, or digit, except the last character, which cannot be a dash.
+(Required) name - Subnet name. Must be 1-63 characters, lowercase, matching `[a-z]([-a-z0-9]*[a-z0-9])?`.
+(Required) ip_cidr_range - Primary IPv4 CIDR range. Must be unique and non-overlapping within the network.
+(Required) region - GCP region in which to create the subnet.
 
-(Optional) description - A description of the subnet.
-(Optional) private_ip_google_access - When enabled, virtual machines in this subnetwork without external IP addresses can access Google APIs and services by using Private Google Access.
-(Optional) purpose - The purpose of the resource. This field can be either `PRIVATE_RFC_1918`, `INTERNAL_HTTPS_LOAD_BALANCER` or `REGIONAL_MANAGED_PROXY`. Defaults to `PRIVATE_RFC_1918`.
-(Optional) region - The GCP region for this subnetwork.
-(Optional) role - The role of subnetwork. Possible values are: `ACTIVE`, `BACKUP`. An `ACTIVE` subnetwork is one that is currently being used. A `BACKUP` subnetwork is one that is ready to be promoted to `ACTIVE` or is currently draining. Subnetwork role must be specified when `purpose` is set to `INTERNAL_HTTPS_LOAD_BALANCER` or `REGIONAL_MANAGED_PROXY`.
-(Optional) stack_type - The stack type for this subnet to identify whether the IPv6 feature is enabled or not. If not specified `IPV4_ONLY` will be used. Possible values are: `IPV4_ONLY`, `IPV4_IPV6`.
-(Optional) log_config - Denotes the logging options for the subnetwork flow logs. If logging is enabled logs will be exported to Stackdriver. This field cannot be set if the purpose of this subnetwork is `INTERNAL_HTTPS_LOAD_BALANCER`.
-(Optional) log_config.aggregation_interval - Toggles the aggregation interval for collecting flow logs. Default value is `INTERVAL_5_SEC`. Possible values are: `INTERVAL_5_SEC`, `INTERVAL_30_SEC`, `INTERVAL_1_MIN`, `INTERVAL_5_MIN`, `INTERVAL_10_MIN`, `INTERVAL_15_MIN`.
-(Optional) log_config.filter_expr - Export filter used to define which VPC flow logs should be logged, as as CEL expression. The default value is `true`, which evaluates to include everything.
-(Optional) log_config.flow_sampling - The value of the field must be in [0, 1]. Default is 0.5.
-(Optional) log_config.metadata - Configures whether metadata fields should be added to the reported VPC flow logs. Default value is `INCLUDE_ALL_METADATA`. Possible values are: `EXCLUDE_ALL_METADATA`, `INCLUDE_ALL_METADATA`, `CUSTOM_METADATA`.
-(Optional) log_config.metadata_fields - List of metadata fields that should be added to reported logs. Can only be specified if VPC flow logs for this subnetwork is enabled and `metadata` is set to `CUSTOM_METADATA`.
-(Optional) secondary_ip_ranges - An array of configurations for secondary IP ranges for virtual machine instances contained in this subnetwork.
-(Optional) secondary_ip_ranges.ip_cidr_range - The range of IP addresses belonging to this subnetwork secondary range. Provide this property when you create the subnetwork. Ranges must be unique and non-overlapping with all primary and secondary IP ranges within a network. Only IPv4 is supported.
-(Optional) secondary_ip_ranges.range_name - The name associated with this subnetwork secondary range, used when adding an alias IP range to a VM instance. The name must be 1-63 characters long, and comply with RFC1035. The name must be unique within the subnetwork.
+(Optional) description - Human-readable description.
+(Optional) private_ip_google_access - Allow VMs without external IPs to reach Google APIs via internal routing. Defaults to true — required for GKE nodes, Cloud SQL clients, and any workload that calls Google APIs without a public IP or Cloud NAT.
+(Optional) purpose - Subnet purpose. One of PRIVATE, REGIONAL_MANAGED_PROXY, GLOBAL_MANAGED_PROXY, PRIVATE_SERVICE_CONNECT, PEER_MIGRATION, or PRIVATE_NAT. Defaults to PRIVATE.
+(Optional) role - ACTIVE or BACKUP. Required when purpose is REGIONAL_MANAGED_PROXY or GLOBAL_MANAGED_PROXY.
+(Optional) stack_type - IPV4_ONLY (default) or IPV4_IPV6.
+(Optional) ipv6_access_type - INTERNAL or EXTERNAL. Only valid when stack_type is IPV4_IPV6.
+
+(Optional) log_config - Enable VPC flow log export for this subnet. When null, flow logging is disabled. Cannot be set when purpose is INTERNAL_HTTPS_LOAD_BALANCER.
+(Optional) log_config.aggregation_interval - Log aggregation window. One of INTERVAL_5_SEC (default), INTERVAL_30_SEC, INTERVAL_1_MIN, INTERVAL_5_MIN, INTERVAL_10_MIN, or INTERVAL_15_MIN.
+(Optional) log_config.filter_expr - CEL expression to filter exported logs. Defaults to "true" (export all).
+(Optional) log_config.flow_sampling - Fraction of flow logs to export, between 0 and 1. Defaults to 0.5.
+(Optional) log_config.metadata - Metadata fields to include. One of INCLUDE_ALL_METADATA (default), EXCLUDE_ALL_METADATA, or CUSTOM_METADATA.
+(Optional) log_config.metadata_fields - Specific metadata fields to export. Only valid when metadata is CUSTOM_METADATA.
+
+(Optional) nat - Configure Cloud NAT egress for this subnet.
+(Optional) nat.ip_self_links - Self-links of pre-provisioned external IP addresses to use for NAT. When non-empty, MANUAL_ONLY allocation is used and GCP will only use these addresses for outbound translation — useful when outbound IPs must be stable for allowlisting. When empty, AUTO_ONLY allocation is used and GCP manages the IPs.
+(Optional) nat.secondary_ip_range_names - Names of secondary IP ranges to use for NAT when nat.source_ip_ranges_to_nat is LIST_OF_SECONDARY_IP_RANGES. Must be non-empty when the option is set to LIST_OF_SECONDARY_IP_RANGES, and must be absent otherwise.
+(Optional) nat.source_ip_ranges_to_nat - Controls which IP ranges on this subnet are subject to NAT translation. A combination of ALL_IP_RANGES (default) to apply NAT to all primary and secondary ranges, PRIMARY_IP_RANGE to apply NAT to the primary range only, or LIST_OF_SECONDARY_IP_RANGES to apply NAT only to specific secondary ranges specified in nat.secondary_ip_range_names.
+
+(Optional) secondary_ip_ranges - Additional IP ranges for alias IPs, e.g. for GKE Pod and Service CIDRs. Each range must be unique and non-overlapping within the network.
+(Required) secondary_ip_ranges.range_name - Name for the secondary range.
+(Required) secondary_ip_ranges.ip_cidr_range - CIDR range for the secondary range.
 EOF
   type = list(object({
     description              = optional(string)
     ip_cidr_range            = string
+    ipv6_access_type         = optional(string)
     name                     = string
-    private_ip_google_access = optional(bool, false)
-    purpose                  = optional(string, "PRIVATE_RFC_1918")
-    region                   = optional(string)
+    private_ip_google_access = optional(bool, true)
+    purpose                  = optional(string, "PRIVATE")
+    region                   = string
     role                     = optional(string)
     stack_type               = optional(string, "IPV4_ONLY")
+
     log_config = optional(object({
       aggregation_interval = optional(string, "INTERVAL_5_SEC")
       filter_expr          = optional(string, "true")
@@ -110,6 +151,13 @@ EOF
       metadata             = optional(string, "INCLUDE_ALL_METADATA")
       metadata_fields      = optional(list(string))
     }))
+
+    nat = optional(object({
+      ip_self_links            = optional(list(string), [])
+      secondary_ip_range_names = optional(list(string), [])
+      source_ip_ranges_to_nat  = optional(list(string), ["ALL_IP_RANGES"])
+    }))
+
     secondary_ip_ranges = optional(list(object({
       ip_cidr_range = string
       range_name    = string
@@ -117,4 +165,67 @@ EOF
   }))
   default  = []
   nullable = false
+  validation {
+    condition = alltrue([
+      for s in var.subnets :
+      s.purpose == null ? true : contains(
+        ["PRIVATE", "REGIONAL_MANAGED_PROXY", "GLOBAL_MANAGED_PROXY", "PRIVATE_SERVICE_CONNECT", "PEER_MIGRATION", "PRIVATE_NAT"],
+        s.purpose
+      )
+    ])
+    error_message = "subnets: `purpose` must be one of `PRIVATE`, `REGIONAL_MANAGED_PROXY`, `GLOBAL_MANAGED_PROXY`, `PRIVATE_SERVICE_CONNECT`, `PEER_MIGRATION`, or `PRIVATE_NAT`."
+  }
+  validation {
+    condition = alltrue([
+      for s in var.subnets :
+      s.stack_type == null ? true : contains(["IPV4_ONLY", "IPV4_IPV6"], s.stack_type)
+    ])
+    error_message = "subnets: `stack_type` must be one of `IPV4_ONLY` or `IPV4_IPV6`."
+  }
+  validation {
+    condition = alltrue([
+      for s in var.subnets :
+      s.log_config == null ? true : contains(
+        ["INTERVAL_5_SEC", "INTERVAL_30_SEC", "INTERVAL_1_MIN", "INTERVAL_5_MIN", "INTERVAL_10_MIN", "INTERVAL_15_MIN"],
+        s.log_config.aggregation_interval
+      )
+    ])
+    error_message = "subnets: `log_config.aggregation_interval` must be one of `INTERVAL_5_SEC`, `INTERVAL_30_SEC`, `INTERVAL_1_MIN`, `INTERVAL_5_MIN`, `INTERVAL_10_MIN`, or `INTERVAL_15_MIN`."
+  }
+  validation {
+    condition = alltrue([
+      for s in var.subnets :
+      s.log_config == null ? true : contains(
+        ["INCLUDE_ALL_METADATA", "EXCLUDE_ALL_METADATA", "CUSTOM_METADATA"],
+        s.log_config.metadata
+      )
+    ])
+    error_message = "subnets: `log_config.metadata` must be one of `INCLUDE_ALL_METADATA`, `EXCLUDE_ALL_METADATA`, or `CUSTOM_METADATA`."
+  }
+  validation {
+    condition = alltrue([
+      for s in var.subnets :
+      s.nat == null ? true : alltrue([
+        for range in s.nat.source_ip_ranges_to_nat :
+        contains(["ALL_IP_RANGES", "PRIMARY_IP_RANGE", "LIST_OF_SECONDARY_IP_RANGES"], range)
+      ])
+    ])
+    error_message = "subnets: `nat.source_ip_ranges_to_nat` values must each be one of `ALL_IP_RANGES`, `PRIMARY_IP_RANGE`, or `LIST_OF_SECONDARY_IP_RANGES`."
+  }
+  validation {
+    condition = alltrue([
+      for s in var.subnets :
+      s.nat == null ? true :
+      !contains(s.nat.source_ip_ranges_to_nat, "LIST_OF_SECONDARY_IP_RANGES") || length(s.nat.secondary_ip_range_names) > 0
+    ])
+    error_message = "subnets: `nat.secondary_ip_range_names` must be non-empty when `nat.source_ip_ranges_to_nat` contains `LIST_OF_SECONDARY_IP_RANGES`."
+  }
+  validation {
+    condition = alltrue([
+      for s in var.subnets :
+      s.nat == null ? true :
+      length(s.nat.source_ip_ranges_to_nat) > 0
+    ])
+    error_message = "subnets: `nat.source_ip_ranges_to_nat` must not be empty."
+  }
 }

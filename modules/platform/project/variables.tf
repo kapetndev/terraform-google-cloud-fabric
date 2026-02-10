@@ -1,35 +1,38 @@
 variable "auto_create_network" {
-  description = "Whether to create the default network for the project."
+  description = "Whether to create the default VPC network for the project. Defaults to false — the default network is a legacy construct that should be avoided in new projects."
   type        = bool
   default     = false
+  nullable    = false
 }
 
 variable "billing_account" {
-  description = "The alphanumeric billing account ID."
-  type        = string
-  default     = null
-}
-
-variable "descriptive_name" {
-  description = "The authoritative name of the project. Used instead of `name` variable."
+  description = "The alphanumeric billing account ID to associate with the project. Required to enable paid APIs and services."
   type        = string
   default     = null
 }
 
 variable "disable_dependent_services" {
-  description = "Whether to disable dependent services when disabling a service."
+  description = "When disabling a service, also disable any services that depend on it. Defaults to false."
   type        = bool
   default     = false
+  nullable    = false
 }
 
 variable "disable_on_destroy" {
-  description = "Whether to disable the service when the resource is destroyed."
+  description = "Disable services when they are removed from the `services` set. Defaults to true. Set to false if services are managed outside this module or if disabling them on removal would break existing workloads."
   type        = bool
   default     = true
+  nullable    = false
+}
+
+variable "display_name" {
+  description = "Fully qualified, authoritative display name of the project. When set, `name` and `project_id` are mutually exclusive. Set one or the other, not both."
+  type        = string
+  default     = null
 }
 
 variable "group_iam" {
-  description = "Authoritative IAM binding for organization groups, in `{GROUP_EMAIL => [ROLES]}` format. Group emails must be static. Can be used in combination with the `iam` variable."
+  description = "Authoritative IAM binding for organisation groups, in `{GROUP_EMAIL => [ROLES]}` format. Group emails must be static. Can be used in combination with the `iam` variable."
   type        = map(set(string))
   default     = {}
   nullable    = false
@@ -43,10 +46,9 @@ variable "iam" {
 }
 
 variable "iam_bindings" {
-  description = "Authoritative IAM bindings in `{KEY => {members = [MEMBERS], role = ROLE, condition = {}}}` format. Role/member pairs cannot appear in both this variable and `iam`. Keys are arbitrary."
+  description = "Authoritative IAM bindings with conditions in `{ROLE => {members = [MEMBERS], condition = {}}}` format. Roles cannot appear in both this variable and `iam`. Keys are the IAM role."
   type = map(object({
     members = set(string)
-    role    = string
     condition = optional(object({
       description = optional(string)
       expression  = string
@@ -73,21 +75,24 @@ variable "iam_members" {
 }
 
 variable "name" {
-  description = "The project name. An ID suffix will be added to the name to ensure uniqueness."
+  description = "The project name. Used as a prefix when generating the project ID unless `project_id` is explicitly set."
   type        = string
+  default     = ""
+  nullable    = false
 }
 
 variable "parent" {
-  description = "The parent folder or organization in 'folders/folder_id' or 'organizations/org_id' format."
+  description = "The parent folder or organisation in `folders/FOLDER_ID` or `organizations/ORG_ID` format."
   type        = string
+  nullable    = false
   validation {
     condition     = can(regex("(organizations|folders)/[0-9]+", var.parent))
-    error_message = "Parent must be of the form folders/folder_id or organizations/organization_id."
+    error_message = "`parent` must be in the form `folders/FOLDER_ID` or `organizations/ORG_ID`."
   }
 }
 
 variable "policies" {
-  description = "Organization policies scoped to this project."
+  description = "Organisation policies scoped to this project, keyed by constraint name (e.g. `constraints/compute.requireOsLogin`)."
   type = map(object({
     dry_run             = optional(bool, false)
     inherit_from_parent = optional(bool) # for list policies only.
@@ -116,30 +121,30 @@ variable "policies" {
 }
 
 variable "prefix" {
-  description = "An optional prefix used to generate the project id."
+  description = "An optional prefix prepended to `name` when generating the project ID. Cannot be an empty string — use null to omit."
   type        = string
   default     = null
   validation {
     condition     = var.prefix != ""
-    error_message = "Prefix cannot be empty, please use null instead."
+    error_message = "`prefix` cannot be an empty string. Use null to omit the prefix."
   }
 }
 
 variable "project_id" {
-  description = "The ID of the project. If it is not provided the name of the project is used followed by a random suffix."
+  description = "An explicit project ID. When set, the module uses this value directly rather than generating one from `name`. Must be unique within GCP."
   type        = string
   default     = null
 }
 
 variable "services" {
-  description = "A list of services to enable in the project."
+  description = "Set of GCP API service names to enable on the project, e.g. `[\"storage.googleapis.com\", \"container.googleapis.com\"]`."
   type        = set(string)
   default     = []
   nullable    = false
 }
 
 variable "tag_bindings" {
-  description = "Tag bindings for this project, in {KEY => TAG} value id format."
+  description = "Tag bindings to attach to the project in `{TAG_KEY => TAG_VALUE_ID}` format, where TAG_VALUE_ID is the full tag value resource ID."
   type        = map(string)
   default     = {}
   nullable    = false
