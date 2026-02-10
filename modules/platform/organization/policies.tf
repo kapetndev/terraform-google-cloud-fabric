@@ -18,8 +18,8 @@ locals {
 
 resource "google_org_policy_policy" "policies" {
   for_each = local.policies
-  name     = "${var.organization_id}/policies/${each.value}"
-  parent   = var.organization_id
+  name     = "organizations/${var.organization_id}/policies/${each.key}"
+  parent   = "organizations/${var.organization_id}"
 
   dynamic "spec" {
     for_each = lookup(each.value, "dry_run", false) ? [] : [each.value]
@@ -36,7 +36,7 @@ resource "google_org_policy_policy" "policies" {
         content {
           allow_all  = try(rule.value.allow.all, false) == true ? "TRUE" : null
           deny_all   = try(rule.value.deny.all, false) == true ? "TRUE" : null
-          enforce    = (spec.value.is_boolean_policy && rule.value.enforce == true) ? "TRUE" : null
+          enforce    = spec.value.is_boolean_policy ? (rule.value.enforce == true ? "TRUE" : "FALSE") : null
           parameters = rule.value.parameters
 
           dynamic "condition" {
@@ -79,7 +79,7 @@ resource "google_org_policy_policy" "policies" {
         content {
           allow_all  = try(rule.value.allow.all, false) == true ? "TRUE" : null
           deny_all   = try(rule.value.deny.all, false) == true ? "TRUE" : null
-          enforce    = (spec.value.is_boolean_policy && rule.value.enforce == true) ? "TRUE" : null
+          enforce    = spec.value.is_boolean_policy ? (rule.value.enforce == true ? "TRUE" : "FALSE") : null
           parameters = rule.value.parameters
 
           dynamic "condition" {

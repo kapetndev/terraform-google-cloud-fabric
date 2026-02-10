@@ -1,9 +1,9 @@
 resource "google_iam_workload_identity_pool" "pool" {
   description               = var.description
   disabled                  = var.disabled
-  display_name              = coalesce(var.display_name, var.name)
+  display_name              = var.display_name
   project                   = var.project_id
-  workload_identity_pool_id = var.name
+  workload_identity_pool_id = var.pool_id
 }
 
 resource "google_iam_workload_identity_pool_provider" "identity_providers" {

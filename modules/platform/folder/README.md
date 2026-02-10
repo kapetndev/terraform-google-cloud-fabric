@@ -25,7 +25,6 @@ module "engineerig_folder" {
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.5 |
 | <a name="requirement_google"></a> [google](#requirement\_google) | >= 6.14.0 |
-| <a name="requirement_random"></a> [random](#requirement\_random) | >= 3.5.1 |
 
 ## Providers
 
@@ -47,18 +46,20 @@ module "engineerig_folder" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_display_name"></a> [display\_name](#input\_display\_name) | Arbitrary user-provided name for the folder. | `string` | n/a | yes |
-| <a name="input_parent"></a> [parent](#input\_parent) | The parent folder or organization in 'folders/folder\_id' or 'organizations/org\_id' format. | `string` | n/a | yes |
-| <a name="input_group_iam"></a> [group\_iam](#input\_group\_iam) | Authoritative IAM binding for organization groups, in `{GROUP_EMAIL => [ROLES]}` format. Group emails must be static. Can be used in combination with the `iam` variable. | `map(set(string))` | `{}` | no |
+| <a name="input_display_name"></a> [display\_name](#input\_display\_name) | Fully qualified, authoritative display name of the folder. Must be unique within its parent. | `string` | n/a | yes |
+| <a name="input_parent"></a> [parent](#input\_parent) | The parent folder or organisation in `folders/FOLDER_ID` or `organizations/ORG_ID` format. | `string` | n/a | yes |
+| <a name="input_group_iam"></a> [group\_iam](#input\_group\_iam) | Authoritative IAM binding for organisation groups, in `{GROUP_EMAIL => [ROLES]}` format. Group emails must be static. Can be used in combination with the `iam` variable. | `map(set(string))` | `{}` | no |
 | <a name="input_iam"></a> [iam](#input\_iam) | Authoritative IAM bindings in `{ROLE => [MEMBERS]}` format. | `map(set(string))` | `{}` | no |
-| <a name="input_iam_bindings"></a> [iam\_bindings](#input\_iam\_bindings) | Authoritative IAM bindings in `{KEY => {members = [MEMBERS], role = ROLE, condition = {}}}` format. Role/member pairs cannot appear in both this variable and `iam`. Keys are arbitrary. | <pre>map(object({<br/>    members = set(string)<br/>    role    = string<br/>    condition = optional(object({<br/>      description = optional(string)<br/>      expression  = string<br/>      title       = string<br/>    }))<br/>  }))</pre> | `{}` | no |
+| <a name="input_iam_bindings"></a> [iam\_bindings](#input\_iam\_bindings) | Authoritative IAM bindings with conditions in `{ROLE => {members = [MEMBERS], condition = {}}}` format. Roles cannot appear in both this variable and `iam`. Keys are the IAM role. | <pre>map(object({<br/>    members = set(string)<br/>    condition = optional(object({<br/>      description = optional(string)<br/>      expression  = string<br/>      title       = string<br/>    }))<br/>  }))</pre> | `{}` | no |
 | <a name="input_iam_members"></a> [iam\_members](#input\_iam\_members) | Non-authoritative IAM bindings in `{KEY => {member = MEMBER, role = ROLE, condition = {}}}` format. Can be used in combination with the `iam` and `iam_bindings` variables. Keys are arbitrary. | <pre>map(object({<br/>    member = string<br/>    role   = string<br/>    condition = optional(object({<br/>      description = optional(string)<br/>      expression  = string<br/>      title       = string<br/>    }))<br/>  }))</pre> | `{}` | no |
-| <a name="input_policies"></a> [policies](#input\_policies) | Organization policies scoped to this folder. | <pre>map(object({<br/>    dry_run             = optional(bool, false)<br/>    inherit_from_parent = optional(bool) # for list policies only.<br/>    reset               = optional(bool)<br/>    rules = optional(list(object({<br/>      allow = optional(object({<br/>        all    = optional(bool)<br/>        values = optional(list(string))<br/>      }))<br/>      deny = optional(object({<br/>        all    = optional(bool)<br/>        values = optional(list(string))<br/>      }))<br/>      enforce = optional(bool) # for boolean policies only.<br/>      condition = optional(object({<br/>        description = optional(string)<br/>        expression  = string<br/>        location    = optional(string)<br/>        title       = optional(string)<br/>      }))<br/>      parameters = optional(string)<br/>    })), [])<br/>  }))</pre> | `{}` | no |
+| <a name="input_policies"></a> [policies](#input\_policies) | Organisation policies scoped to this folder, keyed by constraint name (e.g. `constraints/compute.requireOsLogin`). | <pre>map(object({<br/>    dry_run             = optional(bool, false)<br/>    inherit_from_parent = optional(bool) # for list policies only.<br/>    reset               = optional(bool)<br/>    rules = optional(list(object({<br/>      allow = optional(object({<br/>        all    = optional(bool)<br/>        values = optional(list(string))<br/>      }))<br/>      deny = optional(object({<br/>        all    = optional(bool)<br/>        values = optional(list(string))<br/>      }))<br/>      enforce = optional(bool) # for boolean policies only.<br/>      condition = optional(object({<br/>        description = optional(string)<br/>        expression  = string<br/>        location    = optional(string)<br/>        title       = optional(string)<br/>      }))<br/>      parameters = optional(string)<br/>    })), [])<br/>  }))</pre> | `{}` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| <a name="output_folder_id"></a> [folder\_id](#output\_folder\_id) | The folder ID. |
+| <a name="output_display_name"></a> [display\_name](#output\_display\_name) | The human-readable display name of the folder. |
+| <a name="output_folder_id"></a> [folder\_id](#output\_folder\_id) | The numeric folder ID (without the `folders/` prefix). Use this when APIs or variables expect a bare numeric ID. |
+| <a name="output_name"></a> [name](#output\_name) | The fully qualified folder name in `folders/FOLDER_ID` format. Use this as the `parent` input to child `folder` or `project` modules, and when constructing org policy resource names. |
 <!-- pyml enable md013,md022,md033 -->
 <!-- END_TF_DOCS -->

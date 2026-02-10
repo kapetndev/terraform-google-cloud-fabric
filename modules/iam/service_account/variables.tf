@@ -1,3 +1,9 @@
+variable "account_id" {
+  description = "The account id that is used to generate the service account email address and a stable unique id. It is unique within a project, must be 6-30 characters long, and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])` to comply with RFC1035."
+  type        = string
+  nullable    = false
+}
+
 variable "description" {
   description = "A brief description of this resource."
   type        = string
@@ -5,13 +11,13 @@ variable "description" {
 }
 
 variable "display_name" {
-  description = "A display name for the service account. Can be updated without creating a new resource. If not provided the value of `name` is used."
+  description = "Fully qualified, authoritative display name of the service account."
   type        = string
-  default     = null
+  nullable    = false
 }
 
 variable "group_iam" {
-  description = "Authoritative IAM binding for organization groups, in `{GROUP_EMAIL => [ROLES]}` format. Group emails must be static. Can be used in combination with the `iam` variable."
+  description = "Authoritative IAM binding for organisation groups, in `{GROUP_EMAIL => [ROLES]}` format. Group emails must be static. Can be used in combination with the `iam` variable."
   type        = map(set(string))
   default     = {}
   nullable    = false
@@ -28,7 +34,6 @@ variable "iam_bindings" {
   description = "Authoritative IAM bindings in `{KEY => {members = [MEMBERS], role = ROLE, condition = {}}}` format. Role/member pairs cannot appear in both this variable and `iam`. Keys are arbitrary."
   type = map(object({
     members = set(string)
-    role    = string
     condition = optional(object({
       description = optional(string)
       expression  = string
@@ -54,23 +59,8 @@ variable "iam_members" {
   nullable = false
 }
 
-variable "name" {
-  description = "The account id that is used to generate the service account email address and a stable unique id. It is unique within a project, must be 6-30 characters long, and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])` to comply with RFC1035."
-  type        = string
-}
-
-variable "prefix" {
-  description = "An optional prefix applied to the service account name."
-  type        = string
-  default     = null
-  validation {
-    condition     = var.prefix != ""
-    error_message = "Prefix cannot be empty, please use null instead."
-  }
-}
-
 variable "project_id" {
-  description = "The ID of the project in which the resource belongs. If it is not provided, the provider project is used."
+  description = "The ID of the GCP project in which to create the service account. Defaults to the provider project if not set."
   type        = string
   default     = null
 }

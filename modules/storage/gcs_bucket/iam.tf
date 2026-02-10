@@ -14,6 +14,12 @@ locals {
   }
 }
 
+# google_storage_bucket_iam_binding is authoritative per role — it overwrites
+# all members for that role on every apply. If the same role appears in both
+# the `iam`/`group_iam` variables (rendered here) and the `iam_bindings`
+# variable (rendered below), the two resources will conflict on every apply,
+# each removing the members set by the other. Ensure each role appears in only
+# one of these variables.
 resource "google_storage_bucket_iam_binding" "authoritative" {
   for_each = local.iam
   bucket   = google_storage_bucket.bucket.name
@@ -24,7 +30,7 @@ resource "google_storage_bucket_iam_binding" "authoritative" {
 resource "google_storage_bucket_iam_binding" "bindings" {
   for_each = var.iam_bindings
   bucket   = google_storage_bucket.bucket.name
-  members  = each.value
+  members  = each.value.members
   role     = each.key
 
   dynamic "condition" {
