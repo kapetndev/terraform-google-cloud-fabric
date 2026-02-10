@@ -11,7 +11,7 @@ variable "display_name" {
 }
 
 variable "group_iam" {
-  description = "Authoritative IAM binding for organization groups, in `{GROUP_EMAIL => [ROLES]}` format. Group emails must be static. Can be used in combination with the `iam` variable."
+  description = "Authoritative IAM binding for organisation groups, in `{GROUP_EMAIL => [ROLES]}` format. Group emails must be static. Can be used in combination with the `iam` variable."
   type        = map(set(string))
   default     = {}
   nullable    = false
@@ -28,7 +28,6 @@ variable "iam_bindings" {
   description = "Authoritative IAM bindings in `{KEY => {members = [MEMBERS], role = ROLE, condition = {}}}` format. Role/member pairs cannot appear in both this variable and `iam`. Keys are arbitrary."
   type = map(object({
     members = set(string)
-    role    = string
     condition = optional(object({
       description = optional(string)
       expression  = string
@@ -57,6 +56,7 @@ variable "iam_members" {
 variable "name" {
   description = "The account id that is used to generate the service account email address and a stable unique id. It is unique within a project, must be 6-30 characters long, and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])` to comply with RFC1035."
   type        = string
+  nullable    = false
 }
 
 variable "prefix" {
@@ -65,7 +65,7 @@ variable "prefix" {
   default     = null
   validation {
     condition     = var.prefix != ""
-    error_message = "Prefix cannot be empty, please use null instead."
+    error_message = "`prefix` cannot be an empty string. Use null to omit the prefix."
   }
 }
 

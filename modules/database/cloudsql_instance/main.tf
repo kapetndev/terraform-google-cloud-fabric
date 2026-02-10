@@ -2,12 +2,12 @@ locals {
   has_replicas = length(var.replicas) > 0
   is_mysql     = can(regex("^MYSQL", var.database_version))
   is_postgres  = can(regex("^POSTGRES", var.database_version))
-  is_regional  = var.availability_type == "REGIONAL" ? true : false
+  is_regional  = var.availability_type == "REGIONAL"
 
-  # When not using a verbatim name, we generate a random ID to use as the
-  # suffix for the instance name. This is to ensure that the name is unique
-  # and does not conflict with any other instances in the project. An optional
-  # prefix can be added to the name, which is useful for grouping instances.
+  # When not using a verbatim name, we generate a random ID to use as the suffix
+  # for the instance name. This is to ensure that the name is unique and does
+  # not conflict with any other instance in the project. An optional prefix can
+  # be added to the name, which is useful for grouping instances.
   name   = "${local.prefix}${var.name}"
   prefix = var.prefix != null ? "${var.prefix}-" : ""
 
@@ -25,7 +25,11 @@ locals {
   # object. For MySQL, anything after the first `@` (if present) in the username
   # will be used as the user's host.
   #
-  # For BUILT_IN users, the password is generated if not provided.
+  # For BUILT_IN users, the password is generated if not provided. Note that
+  # removing an explicit password (setting it to null) will cause a new random
+  # password to be generated on the next apply. Conversely, adding an explicit
+  # password to a user that previously had a generated one will destroy the
+  # random_password resource for that user.
   users = {
     for k, v in var.users : k =>
     local.is_mysql
@@ -76,7 +80,7 @@ resource "random_password" "root_password" {
   special     = true
 }
 
-resource "random_id" "database_name" {
+resource "random_id" "instance_name" {
   count       = var.descriptive_name == null ? 1 : 0
   byte_length = 4
   prefix      = "${local.name}-"
@@ -85,7 +89,7 @@ resource "random_id" "database_name" {
 resource "google_sql_database_instance" "primary" {
   database_version    = var.database_version
   encryption_key_name = var.encryption_key_name
-  name                = coalesce(var.descriptive_name, random_id.database_name[0].hex)
+  name                = coalesce(var.descriptive_name, random_id.instance_name[0].hex)
   project             = var.project_id
   region              = var.region
   root_password       = var.root_password.random_password ? random_password.root_password[0].result : var.root_password.password
@@ -122,27 +126,25 @@ resource "google_sql_database_instance" "primary" {
       }
     }
 
-    dynamic "backup_configuration" {
-      for_each = var.backup_configuration.enabled ? [""] : []
+    backup_configuration {
+      enabled = var.backup_configuration.enabled
 
-      content {
-        enabled = true
-        # Enable binary log if the user asks for it or we have replicas
-        # (default in regional), but only for MySQL.
-        binary_log_enabled = (
-          local.is_mysql
-          ? var.backup_configuration.binary_log_enabled || local.has_replicas || local.is_regional
-          : null
-        )
-        location                       = var.backup_configuration.location
-        point_in_time_recovery_enabled = var.backup_configuration.point_in_time_recovery_enabled
-        start_time                     = var.backup_configuration.start_time
-        transaction_log_retention_days = var.backup_configuration.log_retention_days
+      # Enable binary log if the user asks for it or we have replicas
+      # (default in regional), but only for MySQL.
+      binary_log_enabled = (
+        local.is_mysql
+        ? var.backup_configuration.binary_log_enabled || local.has_replicas || local.is_regional
+        : null
+      )
 
-        backup_retention_settings {
-          retained_backups = var.backup_configuration.retention_count
-          retention_unit   = "COUNT"
-        }
+      location                       = var.backup_configuration.location
+      point_in_time_recovery_enabled = var.backup_configuration.point_in_time_recovery_enabled
+      start_time                     = var.backup_configuration.start_time
+      transaction_log_retention_days = var.backup_configuration.log_retention_days
+
+      backup_retention_settings {
+        retained_backups = var.backup_configuration.retention_count
+        retention_unit   = "COUNT"
       }
     }
 
@@ -226,6 +228,13 @@ resource "google_sql_database_instance" "primary" {
       }
     }
   }
+
+  lifecycle {
+    precondition {
+      condition     = (var.descriptive_name == null) != (var.name == null)
+      error_message = "name: exactly one of `name` or `descriptive_name` must be set."
+    }
+  }
 }
 
 resource "google_sql_database_instance" "replicas" {
@@ -233,7 +242,7 @@ resource "google_sql_database_instance" "replicas" {
   database_version     = var.database_version
   encryption_key_name  = each.value.encryption_key_name
   master_instance_name = google_sql_database_instance.primary.name
-  name                 = "${coalesce(var.descriptive_name, random_id.database_name[0].hex)}-${each.key}"
+  name                 = "${coalesce(var.descriptive_name, random_id.instance_name[0].hex)}-${each.key}"
   project              = var.project_id
   region               = coalesce(each.value.region, var.region)
 

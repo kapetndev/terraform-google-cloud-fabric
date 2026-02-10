@@ -1,4 +1,8 @@
 locals {
+  # When not using a verbatim name, we generate a random ID to use as the suffix
+  # for the instance name. This is to ensure that the name is unique and does
+  # not conflict with any other instance in the project. An optional prefix can
+  # be added to the name, which is useful for grouping instances.
   name   = "${local.prefix}${var.name}"
   prefix = var.prefix != null ? "${var.prefix}-" : ""
 
@@ -10,13 +14,6 @@ locals {
     5 = "FRIDAY"
     6 = "SATURDAY"
     7 = "SUNDAY"
-  }
-}
-
-check "name" {
-  assert {
-    condition     = var.name != "" && var.descriptive_name == null || var.name == "" && var.descriptive_name != null
-    error_message = "Only one of 'name' or 'descriptive_name' should be set."
   }
 }
 
@@ -38,6 +35,7 @@ resource "google_redis_instance" "default" {
   project                 = var.project_id
   redis_version           = var.redis_version
   region                  = var.region
+  reserved_ip_range       = var.reserved_ip_range
   tier                    = var.tier
 
   dynamic "maintenance_policy" {
@@ -53,10 +51,17 @@ resource "google_redis_instance" "default" {
           day = local.days_of_week[var.maintenance_config.maintenance_window.day]
 
           start_time {
-            hours = var.maintenance_policy.maintenance_window.hour
+            hours = var.maintenance_config.maintenance_window.hour
           }
         }
       }
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = (var.descriptive_name == null) != (var.name == null)
+      error_message = "name: exactly one of `name` or `descriptive_name` must be set."
     }
   }
 }

@@ -2,13 +2,6 @@ locals {
   prefix = var.prefix != null ? "${var.prefix}-" : ""
 }
 
-check "hierarchical_namespace_with_default_event_based_hold" {
-  assert {
-    condition     = var.hierarchical_namespace && var.default_event_based_hold
-    error_message = "Hierarchical namespace cannot be enabled with default event based hold."
-  }
-}
-
 resource "google_storage_bucket" "bucket" {
   force_destroy               = var.force_destroy
   labels                      = var.labels
@@ -18,7 +11,7 @@ resource "google_storage_bucket" "bucket" {
   public_access_prevention    = var.public_access_prevention
   requester_pays              = var.requester_pays
   storage_class               = var.storage_class
-  uniform_bucket_level_access = try(var.hierarchical_namespace, var.uniform_bucket_level_access)
+  uniform_bucket_level_access = var.hierarchical_namespace || var.uniform_bucket_level_access
 
   # Retention and holds.
   # https://cloud.google.com/storage/docs/object-holds
@@ -27,11 +20,12 @@ resource "google_storage_bucket" "bucket" {
   enable_object_retention  = var.enable_object_retention
 
   dynamic "autoclass" {
-    for_each = var.autoclass ? [""] : []
+    for_each = var.autoclass != null ? [var.autoclass] : []
+    iterator = autoclass
 
     content {
-      enabled                = var.autoclass.enabled
-      terminal_storage_class = var.autoclass.terminal_storage_class
+      enabled                = true
+      terminal_storage_class = autoclass.value.terminal_storage_class
     }
   }
 
@@ -65,21 +59,21 @@ resource "google_storage_bucket" "bucket" {
       }
 
       condition {
-        age                                     = rule.value.age
-        created_before                          = rule.value.created_before
-        custom_time_before                      = rule.value.custom_time_before
-        days_since_custom_time                  = rule.value.days_since_custom_time
-        days_since_noncurrent_time              = rule.value.days_since_noncurrent_time
-        matches_prefix                          = rule.value.matches_prefix
-        matches_storage_class                   = rule.value.matches_storage_class
-        matches_suffix                          = rule.value.matches_suffix
-        noncurrent_time_before                  = rule.value.noncurrent_time_before
-        num_newer_versions                      = rule.value.num_newer_versions
-        send_age_if_zero                        = rule.value.send_age_if_zero
-        send_days_since_custom_time_if_zero     = rule.value.send_days_since_custom_time_if_zero
-        send_days_since_noncurrent_time_if_zero = rule.value.send_days_since_noncurrent_time_if_zero
-        send_num_newer_versions_if_zero         = rule.value.send_num_newer_versions_if_zero
-        with_state                              = rule.value.with_state
+        age                                     = rule.value.condition.age
+        created_before                          = rule.value.condition.created_before
+        custom_time_before                      = rule.value.condition.custom_time_before
+        days_since_custom_time                  = rule.value.condition.days_since_custom_time
+        days_since_noncurrent_time              = rule.value.condition.days_since_noncurrent_time
+        matches_prefix                          = rule.value.condition.matches_prefix
+        matches_storage_class                   = rule.value.condition.matches_storage_class
+        matches_suffix                          = rule.value.condition.matches_suffix
+        noncurrent_time_before                  = rule.value.condition.noncurrent_time_before
+        num_newer_versions                      = rule.value.condition.num_newer_versions
+        send_age_if_zero                        = rule.value.condition.send_age_if_zero
+        send_days_since_custom_time_if_zero     = rule.value.condition.send_days_since_custom_time_if_zero
+        send_days_since_noncurrent_time_if_zero = rule.value.condition.send_days_since_noncurrent_time_if_zero
+        send_num_newer_versions_if_zero         = rule.value.condition.send_num_newer_versions_if_zero
+        with_state                              = rule.value.condition.with_state
       }
     }
   }
@@ -102,12 +96,8 @@ resource "google_storage_bucket" "bucket" {
     }
   }
 
-  dynamic "versioning" {
-    for_each = var.versioning ? [""] : []
-
-    content {
-      enabled = var.versioning
-    }
+  versioning {
+    enabled = var.versioning
   }
 
   dynamic "website" {
@@ -116,6 +106,13 @@ resource "google_storage_bucket" "bucket" {
     content {
       main_page_suffix = var.website.main_page_suffix
       not_found_page   = var.website.not_found_page
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = !(var.hierarchical_namespace && var.default_event_based_hold)
+      error_message = "hierarchical_namespace: cannot be enabled at the same time as `default_event_based_hold`."
     }
   }
 }
