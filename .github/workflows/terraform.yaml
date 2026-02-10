@@ -10,6 +10,10 @@ on:
     # return a status indicating a pass.
     - gh-readonly-queue/**
     - master
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
 concurrency:
   group: terraform-${{ github.ref }}
   cancel-in-progress: true
@@ -28,22 +32,23 @@ jobs:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
     - uses: actions/checkout@v4
-    - uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: ${{ env.TF_VERSION }}
     - name: Run tftest
-      uses: kepetndev/tftest@v0.1.0
+      uses: kapetndev/tftest-action@v0.1.0
       with:
-        additional_args: -s --out tftest-results.json
+        working_directory: ${{ env.MODULE_DIR }}
         format: json
-        working_directory: ${{ env.MODULE_DIR }}
-    - name: Run tfsec
-      uses: aquasecurity/tfsec-action@v1.0.3
+        terraform_version: ${{ env.TF_VERSION }}
+        additional_args: -rs --out tftest-results.json
+    - name: Run trivy in IaC mode
+      uses: aquasecurity/trivy-action@0.33.1
       with:
-        working_directory: ${{ env.MODULE_DIR }}
+        scan-ref: ${{ env.MODULE_DIR }}
+        scan-type: config
+        hide-progress: true
         format: sarif
-        soft_fail: true
-        additional_args: --out tfsec-results.sarif
+        output: trivy-results.sarif
+        exit-code: "1"
+        severity: CRITICAL,HIGH
     - name: Run Snyk IaC
       if: env.SNYK_TOKEN != ''
       uses: snyk/actions/iac@master
@@ -55,7 +60,7 @@ jobs:
         args: --sarif-file-output=snyk-results.sarif --report
       continue-on-error: true
     - name: Parse SARIF and aggregate results
-      if: always()
+      if: hashFiles('tftest-results.json') != ''
       run: |
         # Transform tftest JSONL output into a JSON array, pivoting the
         # per-check results array into flat fields on each module object.
@@ -129,7 +134,7 @@ jobs:
             base-results.json > temp.json && mv temp.json base-results.json
         }
 
-        process_sarif "tfsec" "tfsec-results.sarif" "passed"
+        process_sarif "trivy" "trivy-results.sarif" "passed"
 
         if [[ -n "${{ env.SNYK_TOKEN }}" ]]; then
           process_sarif "snyk" "snyk-results.sarif" "passed"
@@ -143,15 +148,15 @@ jobs:
 
         results=$(cat base-results.json | jq -c '.')
         echo "results=${results}" >> $GITHUB_OUTPUT
-    - name: Upload tfsec SARIF
-      if: always() && hashFiles('tfsec-results.sarif') != ''
+    - name: Upload trivy SARIF
+      if: hashFiles('trivy-results.sarif') != ''
       uses: github/codeql-action/upload-sarif@v3
       with:
-        sarif_file: tfsec-results.sarif
-        category: tfsec
+        sarif_file: trivy-results.sarif
+        category: trivy
       continue-on-error: true
     - name: Upload Snyk SARIF
-      if: always() && env.SNYK_TOKEN != '' && hashFiles('snyk-results.sarif') != ''
+      if: env.SNYK_TOKEN != '' && hashFiles('snyk-results.sarif') != ''
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: snyk-results.sarif
@@ -162,9 +167,6 @@ jobs:
     needs: [terraform-checks]
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && always()
-    permissions:
-      contents: read
-      pull-requests: write
     steps:
     - uses: actions/github-script@v7
       with:
@@ -190,10 +192,10 @@ jobs:
             const formattingIcon = getStatusCell(result.formatting, 0, 'formatting');
             const validationIcon = getStatusCell(result.validation, 0, 'validation');
             const lintingIcon = getStatusCell(result.linting, 0, 'linting');
-            const tfsecCell = getStatusCell(result.tfsec, result.tfsec_issues, 'tfsec');
+            const trivyell = getStatusCell(result.trivy, result.ttivy_issues, 'Trivy');
             const snykCell = getStatusCell(result.snyk, result.snyk_issues, 'Snyk');
 
-            return `| \`${result.module}\` | ${structureIcon} | ${formattingIcon} | ${validationIcon} | ${lintingIcon} | ${tfsecCell} | ${snykCell} |`;
+            return `| \`${result.module}\` | ${structureIcon} | ${formattingIcon} | ${validationIcon} | ${lintingIcon} | ${trivyCell} | ${snykCell} |`;
           }).join('\n');
 
           // Calculate summary
@@ -202,7 +204,7 @@ jobs:
             result.structure === 'passed' &&
             result.formatting === 'passed' &&
             result.validation === 'passed' &&
-            result.tfsec === 'passed' &&
+            result.trivy === 'passed' &&
             (result.snyk === 'passed' || result.snyk === 'skipped')
           ).length;
           const failedModules = totalModules - passedModules;
@@ -210,7 +212,7 @@ jobs:
           // Build the comment
           let output = `## Terraform Module Validation Results
 
-          | Module | Structure | Formatting | Validation | Linting | tfsec | Snyk |
+          | Module | Structure | Formatting | Validation | Linting | Trivy | Snyk |
           |--------|-----------|------------|------------|---------|-------|------|
           ${tableRows}
 
@@ -218,7 +220,7 @@ jobs:
 
           // Add security findings note
           const hasSecurityFindings = results.some(result =>
-            (result.tfsec === 'failed' && result.tfsec_issues > 0) ||
+            (result.trivy === 'failed' && result.trivy_issues > 0) ||
             (result.snyk === 'failed' && result.snyk_issues > 0)
           );
 
@@ -227,7 +229,7 @@ jobs:
 
           ### 🔍 Security Findings
 
-          Security issues have been detected. Click the linked numbers in the tfsec/Snyk columns above to view detailed findings in the [Security tab](https://github.com/${{ github.repository }}/security/code-scanning).`;
+          Security issues have been detected. Click the linked numbers in the trivy/Snyk columns above to view detailed findings in the [Security tab](https://github.com/${{ github.repository }}/security/code-scanning).`;
           }
 
           output += '\n\n<!-- terraform-validation-summary -->';
