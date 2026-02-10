@@ -18,8 +18,8 @@ locals {
 
 resource "google_org_policy_policy" "policies" {
   for_each = local.policies
-  name     = "${google_folder.folder.folder_id}/policies/${each.value}"
-  parent   = google_folder.folder.folder_id
+  name     = "${google_folder.folder.name}/policies/${each.key}"
+  parent   = google_folder.folder.name
 
   dynamic "spec" {
     for_each = lookup(each.value, "dry_run", false) ? [] : [each.value]

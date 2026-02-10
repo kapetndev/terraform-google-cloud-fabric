@@ -11,4 +11,11 @@ resource "google_compute_network" "network" {
   # IPv6 support.
   enable_ula_internal_ipv6 = var.enable_ula_internal_ipv6
   internal_ipv6_range      = var.internal_ipv6_range
+
+  lifecycle {
+    precondition {
+      condition     = var.internal_ipv6_range == null || var.enable_ula_internal_ipv6
+      error_message = "`internal_ipv6_range` can only be set when `enable_ula_internal_ipv6` is true."
+    }
+  }
 }

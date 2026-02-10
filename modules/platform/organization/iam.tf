@@ -14,26 +14,22 @@ locals {
   }
 }
 
+# google_organization_iam_binding is authoritative per role — it overwrites all
+# members for that role on every apply. If the same role appears in both the
+# `iam`/`group_iam` variables (rendered here) and the `iam_bindings` variable
+# (rendered below), the two resources will conflict on every apply, each
+# removing the members set by the other.  Ensure each role appears in only one
+# of these variables.
 resource "google_organization_iam_binding" "authoritative" {
   for_each = local.iam
   members  = each.value
   org_id   = var.organization_id
   role     = each.key
-
-  dynamic "condition" {
-    for_each = each.value.condition != null ? [each.value.condition] : []
-
-    content {
-      description = each.value.description
-      expression  = each.value.expression
-      title       = each.value.title
-    }
-  }
 }
 
 resource "google_organization_iam_binding" "bindings" {
   for_each = var.iam_bindings
-  members  = each.value
+  members  = each.value.members
   org_id   = var.organization_id
   role     = each.key
 
