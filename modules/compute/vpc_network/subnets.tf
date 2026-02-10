@@ -1,10 +1,11 @@
 locals {
-  # Subnets may share a name accross regions, so we need to make sure the
-  # resource identifiers are unique. In addition multiple subnets may be defined
-  # within the same region. To ensure uniqueness we append the region to the
-  # name.
+  # Subnets may share a name across regions, and multiple subnets may exist
+  # within the same region. The resource key is region/name, which is
+  # unambiguous because neither a region name nor a subnet name can contain a
+  # forward slash. Putting region first means keys sort naturally by region in
+  # plan output and terraform state list.
   subnets = {
-    for s in var.subnets : "${s.name}_${s.region}" => s
+    for s in var.subnets : "${s.region}/${s.name}" => s
   }
 }
 
@@ -12,6 +13,7 @@ resource "google_compute_subnetwork" "subnets" {
   for_each                 = local.subnets
   description              = each.value.description
   ip_cidr_range            = each.value.ip_cidr_range
+  ipv6_access_type         = each.value.ipv6_access_type
   name                     = each.value.name
   network                  = google_compute_network.network.id
   private_ip_google_access = each.value.private_ip_google_access
@@ -21,6 +23,10 @@ resource "google_compute_subnetwork" "subnets" {
   role                     = each.value.role
   stack_type               = each.value.stack_type
 
+  # Flow log export configuration. The block must be entirely absent when
+  # logging is disabled, so a dynamic block is required. When present, the
+  # iterator is the log_config object itself rather than the [""] sentinel,
+  # which keeps content references clean.
   dynamic "log_config" {
     for_each = each.value.log_config != null ? [each.value.log_config] : []
     iterator = config
@@ -34,6 +40,10 @@ resource "google_compute_subnetwork" "subnets" {
     }
   }
 
+  # Secondary IP range configuration. The block must be entirely absent when no
+  # secondary ranges are configured, so a dynamic block is required. When
+  # present, the iterator is the secondary range object itself rather than the
+  # [""] sentinel, which keeps content references clean.
   dynamic "secondary_ip_range" {
     for_each = { for r in each.value.secondary_ip_ranges : r.range_name => r }
     iterator = range

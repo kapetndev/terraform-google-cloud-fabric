@@ -8,23 +8,13 @@ variable "disabled" {
   description = "Whether the pool is disabled. You cannot use a disabled pool to exchange tokens, or use existing tokens to access resources. If the pool is re-enabled, existing tokens grant access again."
   type        = bool
   default     = false
+  nullable    = false
 }
 
 variable "display_name" {
-  description = "A display name for the pool. Cannot exceed 32 characters. If not provided the value of `name` is used."
+  description = "Fully qualified, authoritative display name of the pool. Cannot exceed 32 characters."
   type        = string
-  default     = null
-}
-
-variable "name" {
-  description = "The ID to use for the pool, which becomes the final component of the resource name. This value should be 4-32 characters, and may contain the characters `[a-z0-9-]`."
-  type        = string
-}
-
-variable "project_id" {
-  description = "The ID of the project in which the resource belongs. If it is not provided, the provider project is used."
-  type        = string
-  default     = null
+  nullable    = false
 }
 
 variable "identity_providers" {
@@ -36,8 +26,10 @@ Identity providers to use for the pool.
 (Optional) description - A description of the provider. Cannot exceed 256 characters.
 (Optional) disabled - Whether the provider is disabled. You cannot use a disabled provider to exchange tokens. However existing tokens still grant access.
 (Optional) display_name - A display name for the provider. Cannot exceed 256 characters. If not provided the value of provider key is used.
+
 (Optional) aws - An Amazon Web Services identity provider. Only one of `aws` or `oidc` may be specified.
 (Optional) aws.account_id - The AWS account ID.
+
 (Optional) oidc - An OpenID Connect 1.0 identity provider. Only one of `aws` or `oidc` may be specified.
 (Optional) oidc.allowed_audiences - Acceptable values for the `aud` field (audience) in the OIDC token.
 (Optional) oidc.issuer_uri - The OIDC issuer URI.
@@ -56,15 +48,30 @@ EOF
       issuer_uri        = string
     }))
   }))
-  default = {}
+  default  = {}
+  nullable = false
   validation {
-    condition     = length(var.identity_providers) > 0
-    error_message = "At least one identity provider must be specified"
+    condition = alltrue([
+      for p in values(var.identity_providers) : p.aws != null || p.oidc != null
+    ])
+    error_message = "identity_providers: each provider must specify exactly one of `aws` or `oidc`."
   }
   validation {
-    condition = length([
-      for p in var.identity_providers : p if p.aws != null || p.oidc != null
-    ]) == length(var.identity_providers)
-    error_message = "One of aws or oidc must be specified per provider"
+    condition = alltrue([
+      for p in values(var.identity_providers) : !(p.aws != null && p.oidc != null)
+    ])
+    error_message = "identity_providers: `aws` and `oidc` are mutually exclusive per provider. Set one or the other, not both."
   }
+}
+
+variable "pool_id" {
+  description = "The ID to use for the pool, which becomes the final component of the resource name. This value should be 4-32 characters, and may contain the characters `[a-z0-9-]`."
+  type        = string
+  nullable    = false
+}
+
+variable "project_id" {
+  description = "The ID of the GCP project in which to create the service account. Defaults to the provider project if not set."
+  type        = string
+  default     = null
 }

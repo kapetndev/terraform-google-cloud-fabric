@@ -1,4 +1,4 @@
-# terraform-google-cloud-fabric ![terraform](https://github.com/kapetndev/terraform-google-cloud-fabric/workflows/terraform/badge.svg)
+# terraform-google-cloud-fabric [![terraform](https://github.com/kapetndev/terraform-google-cloud-fabric/actions/workflows/terraform.yaml/badge.svg?event=push)](https://github.com/kapetndev/terraform-google-cloud-fabric/actions/workflows/terraform.yaml)
 
 This repository provides a collection of Terraform modules and complete
 architectural solutions to create and manage Google Cloud Platform (GCP)
@@ -6,6 +6,18 @@ resources suitable for a variety of use cases.
 
 The purpose of this repository is to provide a foundation for building cloud
 infrastructure that is secure, scalable, and maintainable.
+
+## Blueprints
+
+Blueprints are complete, ready-to-use solutions that demonstrate how to deploy
+and manage GCP resources using Terraform. Each blueprint includes a set of
+modules and configurations that can be customized to fit specific requirements.
+
+The purpose of the blueprints is to establish best practices and provide
+examples of how to implement common GCP architectures. They can be used as a
+starting point for new projects or as a reference for existing deployments.
+
+Existing blueprints can be found in the [blueprints](blueprints) directory.
 
 ## Modules
 

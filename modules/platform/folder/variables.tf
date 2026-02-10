@@ -1,10 +1,10 @@
 variable "display_name" {
-  description = "Arbitrary user-provided name for the folder."
+  description = "Fully qualified, authoritative display name of the folder. Must be unique within its parent."
   type        = string
 }
 
 variable "group_iam" {
-  description = "Authoritative IAM binding for organization groups, in `{GROUP_EMAIL => [ROLES]}` format. Group emails must be static. Can be used in combination with the `iam` variable."
+  description = "Authoritative IAM binding for organisation groups, in `{GROUP_EMAIL => [ROLES]}` format. Group emails must be static. Can be used in combination with the `iam` variable."
   type        = map(set(string))
   default     = {}
   nullable    = false
@@ -18,10 +18,9 @@ variable "iam" {
 }
 
 variable "iam_bindings" {
-  description = "Authoritative IAM bindings in `{KEY => {members = [MEMBERS], role = ROLE, condition = {}}}` format. Role/member pairs cannot appear in both this variable and `iam`. Keys are arbitrary."
+  description = "Authoritative IAM bindings with conditions in `{ROLE => {members = [MEMBERS], condition = {}}}` format. Roles cannot appear in both this variable and `iam`. Keys are the IAM role."
   type = map(object({
     members = set(string)
-    role    = string
     condition = optional(object({
       description = optional(string)
       expression  = string
@@ -48,16 +47,17 @@ variable "iam_members" {
 }
 
 variable "parent" {
-  description = "The parent folder or organization in 'folders/folder_id' or 'organizations/org_id' format."
+  description = "The parent folder or organisation in `folders/FOLDER_ID` or `organizations/ORG_ID` format."
   type        = string
+  nullable    = false
   validation {
-    condition     = var.parent == null || can(regex("(organizations|folders)/[0-9]+", var.parent))
-    error_message = "Parent must be of the form folders/folder_id or organizations/organization_id."
+    condition     = can(regex("(organizations|folders)/[0-9]+", var.parent))
+    error_message = "parent: must be in the form `folders/FOLDER_ID` or `organizations/ORG_ID`."
   }
 }
 
 variable "policies" {
-  description = "Organization policies scoped to this folder."
+  description = "Organisation policies scoped to this folder, keyed by constraint name (e.g. `constraints/compute.requireOsLogin`)."
   type = map(object({
     dry_run             = optional(bool, false)
     inherit_from_parent = optional(bool) # for list policies only.

@@ -51,6 +51,13 @@ locals {
   }
 }
 
+# google_kms_key_ring_iam_binding is authoritative per role — it overwrites
+# all members for that role on every apply. If the same role appears in both
+# the `iam`/`group_iam` variables (rendered here) and the `iam_bindings`
+# variable (rendered below), the two resources will conflict on every apply,
+# each removing the members set by the other. Ensure each role appears in only
+# one of these variables. The same applies to per-key IAM via `keys[*].iam`
+# and `keys[*].iam_bindings`.
 resource "google_kms_key_ring_iam_binding" "authoritative" {
   for_each    = local.iam
   key_ring_id = local.key_ring.id
