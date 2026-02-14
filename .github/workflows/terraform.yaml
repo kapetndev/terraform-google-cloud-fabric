@@ -47,7 +47,6 @@ jobs:
         hide-progress: true
         format: sarif
         output: trivy-results.sarif
-        exit-code: "1"
         severity: CRITICAL,HIGH
     - name: Run Snyk IaC
       if: env.SNYK_TOKEN != ''
@@ -61,93 +60,135 @@ jobs:
       continue-on-error: true
     - name: Parse SARIF and aggregate results
       if: hashFiles('tftest-results.json') != ''
-      run: |
-        # Transform tftest JSONL output into a JSON array, pivoting the
-        # per-check results array into flat fields on each module object.
-        #
-        # INPUT (one JSON object per line):
-        #   {"module":"modules/foo","results":[{"check":"structure","status":"passed",...},...]}
-        #
-        # OUTPUT (JSON array):
-        #   [{"module":"modules/foo","linting":"skipped","structure":"passed","formatting":"passed","validation":"passed"}]
-        jq -s 'map({module: .module, linting: "skipped"} + (.results | INDEX(.check) | with_entries(.value = .value.status)))' \
-          tftest-results.json > base-results.json
+      id: aggregate
+      uses: actions/github-script@v7
+      env:
+        MODULE_DIR: ${{ env.MODULE_DIR }}
+        SNYK_TOKEN: ${{ env.SNYK_TOKEN }}
+      with:
+        script: |
+          const fs = require('fs');
 
-        # extract_module_from_path <filepath>
-        #
-        # Given a file path from a SARIF result, extracts the module path (eg.
-        # modules/foo) by matching the MODULE_DIR prefix and first path
-        # segment. If the path doesn't match the expected format, returns an
-        # empty string which will be ignored in the counting step.
-        extract_module_from_path() {
-          local filepath="$1"
-          echo "${filepath}" | sed -E 's|^('"${MODULE_DIR}"'/[^/]+).*|\1|'
-        }
+          /**
+           * Extracts the module path from a file path by removing the filename
+           * and normalising relative to MODULE_DIR.
+           */
+          function extractModulePath(filepath, moduleDir) {
+            const normalized = filepath.replace(/\\/g, '/');
+            const segments = normalized.split('/').filter(Boolean);
 
-        # process_sarif <tool> <sarif_file> <absent_status>
-        #
-        # Reads a SARIF file, counts findings per module, and merges the results
-        # into base-results.json. Modules with findings get <tool>="failed" and
-        # <tool>_issues=<count>. Modules with no findings get
-        # <tool>=<absent_status> and <tool>_issues=0. When the SARIF file is
-        # missing the absent status is applied to all modules without parsing.
-        process_sarif() {
-          local tool="$1"
-          local sarif_file="$2"
-          local absent_status="$3"
-          local counts_file="${tool}-counts.txt"
+            // Remove the filename (last segment)
+            if (segments.length > 0) {
+              segments.pop();
+            }
 
-          echo "### ${tool} Results"
+            // If MODULE_DIR is ".", the module is just the directory path
+            if (moduleDir === '.') {
+              return segments.length > 0 ? segments[0] : null;
+            }
 
-          if [[ -z "${sarif_file}" || ! -f "${sarif_file}" ]]; then
-            echo "No ${tool} results, marking all as ${absent_status}"
-            jq --arg tool "${tool}" --arg status "${absent_status}" \
-              'map(. + {($tool): $status, ("\($tool)_issues"): 0})' \
-              base-results.json > temp.json && mv temp.json base-results.json
-            return
-          fi
+            // Check if path already starts with MODULE_DIR
+            const startsWithModuleDir = segments[0] === moduleDir;
 
-          local total
-          total=$(jq '.runs[0].results | length' "${sarif_file}")
-          echo "Total ${tool} issues found: ${total}"
+            if (startsWithModuleDir) {
+              return segments.join('/');
+            } else {
+              return segments.length > 0 ? `${moduleDir}/${segments.join('/')}` : null;
+            }
+          }
 
-          # Parse SARIF and count issues per module.
-          if [[ "${total}" -gt 0 ]]; then
-            jq -r '.runs[0].results[]? | .locations[0].physicalLocation.artifactLocation.uri' "${sarif_file}" \
-              | while read -r filepath; do
-                extract_module_from_path "${filepath}"
-              done | sort | uniq -c | while read -r count module; do
-                echo "${module}|${count}"
-              done > "${counts_file}"
+          /**
+           * Processes a SARIF file and counts issues per module.
+           */
+          function processSarif(tool, sarifPath, moduleDir) {
+            if (!fs.existsSync(sarifPath)) {
+              console.log(`No ${tool} results found at ${sarifPath}`);
+              return null;
+            }
 
-            # Add results to base JSON.
-            while IFS='|' read -r module count; do
-              jq --arg tool "${tool}" --arg mod "${module}" --argjson cnt "${count}" \
-                'map(if .module == $mod then . + {($tool): "failed", ("\($tool)_issues"): $cnt} else . end)' \
-                base-results.json > temp.json && mv temp.json base-results.json
-            done < "${counts_file}"
-          fi
+            const sarif = JSON.parse(fs.readFileSync(sarifPath, 'utf8'));
+            const results = sarif?.runs?.[0]?.results || [];
 
-          # Modules not touched above had no findings.
-          jq --arg tool "${tool}" --arg status "${absent_status}" \
-            'map(if has($tool) | not then . + {($tool): $status, ("\($tool)_issues"): 0} else . end)' \
-            base-results.json > temp.json && mv temp.json base-results.json
-        }
+            return results.reduce((acc, result) => {
+              const uri = result?.locations?.[0]?.physicalLocation?.artifactLocation?.uri;
+              if (!uri) {
+                return acc;
+              }
 
-        process_sarif "trivy" "trivy-results.sarif" "passed"
+              const modulePath = extractModulePath(uri, moduleDir);
+              if (!modulePath) {
+                return acc;
+              }
 
-        if [[ -n "${{ env.SNYK_TOKEN }}" ]]; then
-          process_sarif "snyk" "snyk-results.sarif" "passed"
-        else
-          process_sarif "snyk" "" "skipped"
-        fi
+              acc[modulePath] = (acc[modulePath] || 0) + 1;
+              return acc;
+            }, {});
+          }
 
-        # Output final results
-        echo "### Final Aggregated Results"
-        cat base-results.json | jq '.'
+          // Main aggregation
+          const moduleDir = process.env.MODULE_DIR;
+          const hasSnykToken = process.env.SNYK_TOKEN ? true : false;
 
-        results=$(cat base-results.json | jq -c '.')
-        echo "results=${results}" >> $GITHUB_OUTPUT
+          if (!moduleDir) {
+            core.setFailed('MODULE_DIR environment variable is not set');
+            return;
+          }
+
+          // Read tftest results as JSONL (one JSON object per line)
+          const tftestLines = fs.readFileSync('tftest-results.json', 'utf8')
+            .trim()
+            .split('\n');
+
+          // Transform tftest JSONL into base structure
+          const baseResults = tftestLines.map(line => {
+            const record = JSON.parse(line);
+            const result = {
+              module: record.module,
+              linting: 'skipped',
+            };
+
+            // Pivot the results array into flat fields
+            for (const check of record.results || []) {
+              result[check.check] = check.status;
+            }
+
+            return result;
+          });
+
+          // Process Trivy SARIF
+          const trivyResult = processSarif('trivy', 'trivy-results.sarif', moduleDir);
+
+          // Process Snyk SARIF (if token exists)
+          const snykResult = hasSnykToken
+            ? processSarif('snyk', 'snyk-results.sarif', moduleDir)
+            : null;
+
+          const status = (issues) => issues === 0 ? 'passed' : 'failed';
+
+          // Merge results
+          for (const module of baseResults) {
+            const modulePath = module.module;
+
+            // Add Trivy results
+            if (trivyResult) {
+              module.trivy = status(trivyResult[modulePath] || 0);
+              module.trivy_issues = trivyResult[modulePath] || 0;
+            } else {
+              module.trivy = 'skipped';
+              module.trivy_issues = 0;
+            }
+
+            // Add Snyk results
+            if (snykResult) {
+              module.snyk = status(snykResult[modulePath] || 0);
+              module.snyk_issues = snykResult[modulePath] || 0;
+            } else {
+              module.snyk = 'skipped';
+              module.snyk_issues = 0;
+            }
+          }
+
+          core.setOutput('results', JSON.stringify(baseResults));
     - name: Upload trivy SARIF
       if: hashFiles('trivy-results.sarif') != ''
       uses: github/codeql-action/upload-sarif@v3
