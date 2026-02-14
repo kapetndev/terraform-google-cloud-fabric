@@ -4,11 +4,6 @@ on:
   pull_request:
   push:
     branches:
-    # This is run on merge queue branches as there are jobs listed in this
-    # action that are often required in branch protection rules. Due to guards
-    # below certain jobs may not run in merge queue branches but will still
-    # return a status indicating a pass.
-    - gh-readonly-queue/**
     - master
 permissions:
   contents: read
@@ -26,8 +21,6 @@ jobs:
   terraform-checks:
     name: Run Terraform checks
     runs-on: ubuntu-latest
-    outputs:
-      results: ${{ steps.aggregate.outputs.results }}
     env:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
@@ -50,268 +43,31 @@ jobs:
         severity: CRITICAL,HIGH
     - name: Run Snyk IaC
       if: env.SNYK_TOKEN != ''
-      uses: snyk/actions/iac@master
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      uses: snyk/actions/iac@v1.0.0
       with:
         file: ${{ env.MODULE_DIR }}
         sarif: true
         args: --sarif-file-output=snyk-results.sarif --report
       continue-on-error: true
-    - name: Parse SARIF and aggregate results
-      if: hashFiles('tftest-results.json') != ''
-      id: aggregate
-      uses: actions/github-script@v7
-      env:
-        MODULE_DIR: ${{ env.MODULE_DIR }}
-        SNYK_TOKEN: ${{ env.SNYK_TOKEN }}
+    - name: Report results
+      if: github.event_name == 'pull_request' && hashFiles('tftest-results.json') != ''
+      uses: actions/github-script@v8
       with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-          const fs = require('fs');
-
-          /**
-           * Extracts the module path from a file path by removing the filename
-           * and normalising relative to MODULE_DIR.
-           */
-          function extractModulePath(filepath, moduleDir) {
-            const normalized = filepath.replace(/\\/g, '/');
-            const segments = normalized.split('/').filter(Boolean);
-
-            // Remove the filename (last segment)
-            if (segments.length > 0) {
-              segments.pop();
-            }
-
-            // If MODULE_DIR is ".", the module is just the directory path
-            if (moduleDir === '.') {
-              return segments.length > 0 ? segments[0] : null;
-            }
-
-            // Check if path already starts with MODULE_DIR
-            const startsWithModuleDir = segments[0] === moduleDir;
-
-            if (startsWithModuleDir) {
-              return segments.join('/');
-            } else {
-              return segments.length > 0 ? `${moduleDir}/${segments.join('/')}` : null;
-            }
-          }
-
-          /**
-           * Processes a SARIF file and counts issues per module.
-           */
-          function processSarif(tool, sarifPath, moduleDir) {
-            if (!fs.existsSync(sarifPath)) {
-              console.log(`No ${tool} results found at ${sarifPath}`);
-              return null;
-            }
-
-            const sarif = JSON.parse(fs.readFileSync(sarifPath, 'utf8'));
-            const results = sarif?.runs?.[0]?.results || [];
-
-            return results.reduce((acc, result) => {
-              const uri = result?.locations?.[0]?.physicalLocation?.artifactLocation?.uri;
-              if (!uri) {
-                return acc;
-              }
-
-              const modulePath = extractModulePath(uri, moduleDir);
-              if (!modulePath) {
-                return acc;
-              }
-
-              acc[modulePath] = (acc[modulePath] || 0) + 1;
-              return acc;
-            }, {});
-          }
-
-          // Main aggregation
-          const moduleDir = process.env.MODULE_DIR;
-          const hasSnykToken = process.env.SNYK_TOKEN ? true : false;
-
-          if (!moduleDir) {
-            core.setFailed('MODULE_DIR environment variable is not set');
-            return;
-          }
-
-          // Read tftest results as JSONL (one JSON object per line)
-          const tftestLines = fs.readFileSync('tftest-results.json', 'utf8')
-            .trim()
-            .split('\n');
-
-          // Transform tftest JSONL into base structure
-          const baseResults = tftestLines.map(line => {
-            const record = JSON.parse(line);
-            const result = {
-              module: record.module,
-              linting: 'skipped',
-            };
-
-            // Pivot the results array into flat fields
-            for (const check of record.results || []) {
-              result[check.check] = check.status;
-            }
-
-            return result;
-          });
-
-          // Process Trivy SARIF
-          const trivyResult = processSarif('trivy', 'trivy-results.sarif', moduleDir);
-
-          // Process Snyk SARIF (if token exists)
-          const snykResult = hasSnykToken
-            ? processSarif('snyk', 'snyk-results.sarif', moduleDir)
-            : null;
-
-          const status = (issues) => issues === 0 ? 'passed' : 'failed';
-
-          // Merge results
-          for (const module of baseResults) {
-            const modulePath = module.module;
-
-            // Add Trivy results
-            if (trivyResult) {
-              module.trivy = status(trivyResult[modulePath] || 0);
-              module.trivy_issues = trivyResult[modulePath] || 0;
-            } else {
-              module.trivy = 'skipped';
-              module.trivy_issues = 0;
-            }
-
-            // Add Snyk results
-            if (snykResult) {
-              module.snyk = status(snykResult[modulePath] || 0);
-              module.snyk_issues = snykResult[modulePath] || 0;
-            } else {
-              module.snyk = 'skipped';
-              module.snyk_issues = 0;
-            }
-          }
-
-          core.setOutput('results', JSON.stringify(baseResults));
+          const script = require('./.github/scripts/report-results.js');
+          await script({ github, context, core });
     - name: Upload trivy SARIF
-      if: hashFiles('trivy-results.sarif') != ''
-      uses: github/codeql-action/upload-sarif@v3
+      if: always() && hashFiles('trivy-results.sarif') != ''
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: trivy-results.sarif
         category: trivy
       continue-on-error: true
     - name: Upload Snyk SARIF
-      if: env.SNYK_TOKEN != '' && hashFiles('snyk-results.sarif') != ''
-      uses: github/codeql-action/upload-sarif@v3
+      if: always() && hashFiles('snyk-results.sarif') != ''
+      uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: snyk-results.sarif
-        category: snyk-iac
+        category: snyk
       continue-on-error: true
-  terraform-summary:
-    name: Summarise Terraform checks
-    needs: [terraform-checks]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' && always()
-    steps:
-    - uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const results = JSON.parse('${{ needs.terraform-checks.outputs.results }}');
-
-          // Helper function to get status with link if there are issues
-          const getStatusCell = (status, issueCount, category) => {
-            const icon = status === 'passed' ? '✅' : status === 'failed' ? '❌' : status === 'skipped' ? '⏭️' : '❓';
-
-            if (status === 'failed' && issueCount > 0) {
-              const securityUrl = `https://github.com/${{ github.repository }}/security/code-scanning?query=is%3Aopen+tool%3A${category}`;
-              return `[${icon} ${issueCount}](${securityUrl})`;
-            }
-
-            return icon;
-          };
-
-          // Build table
-          let tableRows = results.map(result => {
-            const structureIcon = getStatusCell(result.structure, 0, 'structure');
-            const formattingIcon = getStatusCell(result.formatting, 0, 'formatting');
-            const validationIcon = getStatusCell(result.validation, 0, 'validation');
-            const lintingIcon = getStatusCell(result.linting, 0, 'linting');
-            const trivyell = getStatusCell(result.trivy, result.ttivy_issues, 'Trivy');
-            const snykCell = getStatusCell(result.snyk, result.snyk_issues, 'Snyk');
-
-            return `| \`${result.module}\` | ${structureIcon} | ${formattingIcon} | ${validationIcon} | ${lintingIcon} | ${trivyCell} | ${snykCell} |`;
-          }).join('\n');
-
-          // Calculate summary
-          const totalModules = results.length;
-          const passedModules = results.filter(result =>
-            result.structure === 'passed' &&
-            result.formatting === 'passed' &&
-            result.validation === 'passed' &&
-            result.trivy === 'passed' &&
-            (result.snyk === 'passed' || result.snyk === 'skipped')
-          ).length;
-          const failedModules = totalModules - passedModules;
-
-          // Build the comment
-          let output = `## Terraform Module Validation Results
-
-          | Module | Structure | Formatting | Validation | Linting | Trivy | Snyk |
-          |--------|-----------|------------|------------|---------|-------|------|
-          ${tableRows}
-
-          **Summary:** modules: ${totalModules}, passed: ${passedModules}, failed: ${failedModules}`;
-
-          // Add security findings note
-          const hasSecurityFindings = results.some(result =>
-            (result.trivy === 'failed' && result.trivy_issues > 0) ||
-            (result.snyk === 'failed' && result.snyk_issues > 0)
-          );
-
-          if (hasSecurityFindings) {
-            output += `
-
-          ### 🔍 Security Findings
-
-          Security issues have been detected. Click the linked numbers in the trivy/Snyk columns above to view detailed findings in the [Security tab](https://github.com/${{ github.repository }}/security/code-scanning).`;
-          }
-
-          output += '\n\n<!-- terraform-validation-summary -->';
-
-          // Find existing comment
-          const { data: comments } = await github.rest.issues.listComments({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.issue.number,
-          });
-
-          const existingComment = comments.find(comment =>
-            comment.user.type === 'Bot' && comment.body.includes('<!-- terraform-validation-summary -->')
-          );
-
-          if (existingComment) {
-            await github.rest.issues.updateComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: existingComment.id,
-              body: output,
-            });
-          } else {
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output,
-            });
-          }
-  verify:
-    name: Verify Terraform checks
-    needs: [terraform-checks]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-    - name: Check results
-      run: |
-        if [[ "${{ needs.terraform-checks.result }}" == "failure" ]]; then
-          echo "❌ Checks failed"
-          exit 1
-        else
-          echo "✅ All checks passed"
-        fi
