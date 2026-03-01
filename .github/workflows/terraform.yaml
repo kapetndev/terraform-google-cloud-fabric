@@ -33,7 +33,7 @@ jobs:
         terraform_version: ${{ env.TF_VERSION }}
         additional_args: -rs --out tftest-results.json
     - name: Run trivy in IaC mode
-      uses: aquasecurity/trivy-action@0.33.1
+      uses: aquasecurity/trivy-action@0.34.1
       with:
         scan-ref: ${{ env.MODULE_DIR }}
         scan-type: config
