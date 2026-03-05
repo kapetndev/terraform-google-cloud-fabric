@@ -18,7 +18,7 @@ resource "google_storage_bucket" "bucket" {
   public_access_prevention    = var.public_access_prevention
   requester_pays              = var.requester_pays
   storage_class               = var.storage_class
-  uniform_bucket_level_access = try(var.hierarchical_namespace, var.uniform_bucket_level_access)
+  uniform_bucket_level_access = var.hierarchical_namespace || var.uniform_bucket_level_access
 
   # Retention and holds.
   # https://cloud.google.com/storage/docs/object-holds

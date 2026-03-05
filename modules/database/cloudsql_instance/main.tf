@@ -122,27 +122,25 @@ resource "google_sql_database_instance" "primary" {
       }
     }
 
-    dynamic "backup_configuration" {
-      for_each = var.backup_configuration.enabled ? [""] : []
+    backup_configuration {
+      enabled = var.backup_configuration.enabled
 
-      content {
-        enabled = true
-        # Enable binary log if the user asks for it or we have replicas
-        # (default in regional), but only for MySQL.
-        binary_log_enabled = (
-          local.is_mysql
-          ? var.backup_configuration.binary_log_enabled || local.has_replicas || local.is_regional
-          : null
-        )
-        location                       = var.backup_configuration.location
-        point_in_time_recovery_enabled = var.backup_configuration.point_in_time_recovery_enabled
-        start_time                     = var.backup_configuration.start_time
-        transaction_log_retention_days = var.backup_configuration.log_retention_days
+      # Enable binary log if the user asks for it or we have replicas
+      # (default in regional), but only for MySQL.
+      binary_log_enabled = (
+        local.is_mysql
+        ? var.backup_configuration.binary_log_enabled || local.has_replicas || local.is_regional
+        : null
+      )
 
-        backup_retention_settings {
-          retained_backups = var.backup_configuration.retention_count
-          retention_unit   = "COUNT"
-        }
+      location                       = var.backup_configuration.location
+      point_in_time_recovery_enabled = var.backup_configuration.point_in_time_recovery_enabled
+      start_time                     = var.backup_configuration.start_time
+      transaction_log_retention_days = var.backup_configuration.log_retention_days
+
+      backup_retention_settings {
+        retained_backups = var.backup_configuration.retention_count
+        retention_unit   = "COUNT"
       }
     }
 

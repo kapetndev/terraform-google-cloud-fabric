@@ -204,7 +204,7 @@ variable "storage_class" {
 variable "uniform_bucket_level_access" {
   description = "Enable uniform bucket-level access for the bucket."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "website" {
@@ -217,7 +217,7 @@ variable "website" {
 }
 
 variable "versioning" {
-  description = "Enable versioning for the bucket."
+  description = "Enable versioning for the bucket. Enabled by default to protect against accidental or malicious deletions."
   type        = bool
-  default     = false
+  default     = true
 }

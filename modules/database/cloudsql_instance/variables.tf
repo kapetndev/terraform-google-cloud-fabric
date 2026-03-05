@@ -23,7 +23,7 @@ variable "backup_configuration" {
   description = <<EOF
 The backup settings for primary instance. Will be automatically enabled if using MySQL with one or more replicas.
 
-(Optional) enabled - Whether backups are enabled. Default is false.
+(Optional) enabled - Whether backups are enabled. Default is true.
 (Optional) binary_log_enabled - Whether binary logging is enabled. Default is false.
 (Optional) location - The location of the backup.
 (Optional) log_retention_days - The number of days to retain transaction log files. Default is 7.
@@ -32,23 +32,15 @@ The backup settings for primary instance. Will be automatically enabled if using
 (Optional) start_time - The start time for the backup window, in 24 hour format. Default is "23:00". The time must be in the format "HH:MM" and must be in UTC.
 EOF
   type = object({
-    enabled                        = optional(bool, false)
     binary_log_enabled             = optional(bool, false)
+    enabled                        = optional(bool, true)
     location                       = optional(string)
     log_retention_days             = optional(number, 7)
     point_in_time_recovery_enabled = optional(bool)
     retention_count                = optional(number, 7)
     start_time                     = optional(string, "23:00")
   })
-  default = {
-    binary_log_enabled             = false
-    enabled                        = false
-    location                       = null
-    log_retention_days             = 7
-    point_in_time_recovery_enabled = null
-    retention_count                = 7
-    start_time                     = "23:00"
-  }
+  default  = {}
   nullable = false
 }
 
@@ -140,7 +132,7 @@ variable "flags" {
 
 variable "insights_config" {
   description = <<EOF
-The Query Insights configuration. Default is to disable Query Insights.
+The Query Insights configuration. Default is to disable Query Insight
 
 (Optional) query_plans_per_minute - The number of query plans to generate per minute. Default is 5.
 (Optional) query_string_length - The maximum query string length. Default is 1024 characters. Default is 1024 characters.
@@ -369,7 +361,7 @@ EOF
   # More details @ https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/sql_database_instance#ssl_mode
   type = object({
     client_certificates = optional(set(string), [])
-    mode                = optional(string, "ALLOW_UNENCRYPTED_AND_ENCRYPTED")
+    mode                = optional(string, "ENCRYPTED_ONLY")
   })
   default  = {}
   nullable = false

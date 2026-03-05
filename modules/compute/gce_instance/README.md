@@ -12,16 +12,30 @@ data "google_compute_image" "instance_image" {
   name = "ubuntu-1804-bionic-v20200414"
 }
 
-data "google_compute_subnetwork" "europe_west2" {
-  name   = "default"
-  region = "europe-west2"
+module "vpc" {
+  source = "github.com/kapetndev/terraform-google-cloud-fabric//modules/compute/vpc_network?ref=v0.1.0"
+  name   = "my-vpc"
+
+  subnets = [
+    {
+      name          = "my-vpc"
+      region        = "europe-west2"
+      ip_cidr_range = "10.0.0.0/24"
+
+      secondary_ip_ranges = [
+        { range_name = "gke-pods",     ip_cidr_range = "10.1.0.0/16" },
+        { range_name = "gke-services", ip_cidr_range = "10.2.0.0/20" },
+      ]
+    },
+  ]
 }
 
 module "instance" {
-  source   = "github.com/kapetndev/terraform-google-cloud-fabric//modules/compute/gce_instance?ref=v0.1.0"
-  hostname = "app.c.my-project.internal"
-  name     = "my-instance"
-  zone     = "europe-west2-a"
+  source          = "github.com/kapetndev/terraform-google-cloud-fabric//modules/compute/gce_instance?ref = v0.1.0"
+  hostname        = "app.c.my-project.internal"
+  name            = "my-instance"
+  service_account = "my-instance-sa@my-project.iam.gserviceaccount.com"
+  zone            = "europe-west2-a"
 
   boot_disk = {
     initialize_params = {
@@ -30,12 +44,7 @@ module "instance" {
   }
 
   network_interfaces = [
-    { subnetwork = data.google_compute_subnetwork.europe_west2.self_link },
-  ]
-
-  tags = [
-    "https-server",
-    "ssh-server",
+    { subnetwork = module.vpc.subnets["europe-west2/my-vpc"].self_link },
   ]
 }
 ```
@@ -47,13 +56,13 @@ module "instance" {
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.5 |
-| <a name="requirement_google"></a> [google](#requirement\_google) | >= 3.11.0 |
+| <a name="requirement_google"></a> [google](#requirement\_google) | >= 4.60.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_google"></a> [google](#provider\_google) | >= 3.11.0 |
+| <a name="provider_google"></a> [google](#provider\_google) | >= 4.60.0 |
 
 ## Resources
 
@@ -66,26 +75,30 @@ module "instance" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_name"></a> [name](#input\_name) | A unique name for the resource, required by GCE. Changing this forces a new resource to be created. | `string` | n/a | yes |
-| <a name="input_zone"></a> [zone](#input\_zone) | The zone that the machine should be created in. If it is not provided, the provider zone is used. | `string` | n/a | yes |
-| <a name="input_attached_disks"></a> [attached\_disks](#input\_attached\_disks) | A list of additional disks to attach to the instance.<br/><br/>(Required) name - A unique name for the resource, required by GCE.<br/>(Required) size - The size of the disk attached to the instance, specified in GB.<br/><br/>(Optional) description - A brief description of the resource.<br/>(Optional) device\_name - The name with which attached disk will be accessible. On the instance, this device will be `/dev/disk/by-id/google-{{device_name}}`.<br/>(Optional) source - The name or self\_link of an existing disk (such as those managed by `google_compute_disk`), disk image, or snapshot.<br/>(Optional) source\_type - The type of the disk source, either `attach`, `image`, or `snapshot`. Leaving this empty is the same as `attach` but the `source` is ignored.<br/>(Optional) options - The options to use for this disk.<br/>(Optional) options.mode - The mode in which to attach this disk, either `READ_WRITE` or `READ_ONLY`. If not specified, the default is to attach the disk in `READ_WRITE` mode.<br/>(Optional) options.type - The type of disk to use, either `pd-standard` or `pd-ssd`. | <pre>list(object({<br/>    description = optional(string)<br/>    device_name = optional(string)<br/>    name        = string<br/>    size        = string<br/>    source      = optional(string)<br/>    source_type = optional(string)<br/>    options = optional(<br/>      object({<br/>        mode = optional(string, "READ_WRITE")<br/>        type = optional(string, "pd-ssd")<br/>      }),<br/>      {<br/>        mode = "READ_WRITE"<br/>        type = "pd-ssd"<br/>      }<br/>    )<br/>  }))</pre> | `[]` | no |
-| <a name="input_boot_disk"></a> [boot\_disk](#input\_boot\_disk) | The boot disk for the instance.<br/><br/>(Optional) auto\_delete - Whether the disk will be auto-deleted when the instance is deleted. Default value is true.<br/>(Optional) initialization\_params - The parameters for a new disk that will be created alongside the new instance. Either `initialization_params` or `source` must be set.<br/>(Optional) initialization\_params.image - The image from which to initialize this disk. This can be one of: the image's `self_link`, `projects/{project}/global/images/{image}`, `projects/{project}/global/images/family/{family}`, `global/images/{image}`, `global/images/family/{family}`, `family/{family}`, `{project}/{family}`, `{project}/{image}`, `{family}`, or `{image}`. If referred by family, the images names must include the family name. If they don't, use the `google_compute_image` resource instead.<br/>(Optional) initialization\_params.size - The size of the image, specified in GB. If not specified, it will inherit the size of its base image.<br/>(Optional) initialization\_params.type - The type of the disk. Default value is `pd-ssd`. Possible values are `pd-standard` and `pd-ssd`.<br/>(Optional) source - The name or `self_link` of an existing disk (such as those managed by `google_compute_disk`), or disk image. | <pre>object({<br/>    auto_delete = optional(bool, true)<br/>    source      = optional(string)<br/>    initialization_params = optional(object({<br/>      image = optional(string, "projects/debian-cloud/global/images/family/debian-11")<br/>      size  = optional(number, 20)<br/>      type  = optional(string, "pd-ssd")<br/>    }))<br/>  })</pre> | <pre>{<br/>  "initialization_params": {}<br/>}</pre> | no |
-| <a name="input_description"></a> [description](#input\_description) | A brief description of this resource. | `string` | `null` | no |
-| <a name="input_hostname"></a> [hostname](#input\_hostname) | A custom hostname for the instance. Must be a fully qualified DNS name and RFC-1035-valid. Valid format is a series of labels 1-63 characters long matching the regular expression [a-z]([-a-z0-9]*[a-z0-9]), concatenated with periods. The entire hostname must not exceed 253 characters. Changing this forces a new resource to be created. | `string` | `null` | no |
-| <a name="input_labels"></a> [labels](#input\_labels) | A map of user defined key/value label pairs to assign to the instance. | `map(string)` | `{}` | no |
-| <a name="input_machine_type"></a> [machine\_type](#input\_machine\_type) | The machine type to create. | `string` | `"n1-standard-1"` | no |
-| <a name="input_metadata"></a> [metadata](#input\_metadata) | A map of user defined key/value metadata pairs to make available from within the instance. | `map(string)` | `{}` | no |
-| <a name="input_network_interfaces"></a> [network\_interfaces](#input\_network\_interfaces) | A list of network interfaces to attach to the instance.<br/><br/>(Optional) external\_access - Whether to assign a public IP address to this interface. Default value is `false`.<br/>(Optional) internal\_address - The private IP address to assign to the instance. If not given, the address will be automatically assigned.<br/>(Optional) nat\_address - The IP address that will be 1:1 mapped to this interface. If not given, and external access is enabled, the address will be automatically assigned.<br/>(Optional) network - The name or `self_link` of the network to attach this interface to. At least one of `network` or `subnetwork` must be provided. If `network` isn't provided it will be inferred from `subnetwork`.<br/>(Optional) subnetwork - The name or `self_link` of the subnetwork to attach this interface to. At least one of `network` or `subnetwork` must be provided. | <pre>list(object({<br/>    external_access  = optional(bool, false)<br/>    internal_address = optional(string)<br/>    nat_address      = optional(string)<br/>    network          = optional(string)<br/>    subnetwork       = optional(string)<br/>  }))</pre> | `[]` | no |
-| <a name="input_oauth_scopes"></a> [oauth\_scopes](#input\_oauth\_scopes) | A list of service scopes. Both OAuth2 URLs and gcloud short names are supported. To allow full access to all Cloud APIs, use the `cloud-platform` scope. *Note*: `allow_stopping_for_update` must be set to `true` or the instance must have a `desired_status` of `TERMINATED` in order to update this field. | `set(string)` | `[]` | no |
-| <a name="input_project_id"></a> [project\_id](#input\_project\_id) | The ID of the project in which the resource belongs. If it is not provided, the provider project is used. | `string` | `null` | no |
-| <a name="input_running"></a> [running](#input\_running) | Whether the instance is running. | `bool` | `true` | no |
-| <a name="input_service_account_email"></a> [service\_account\_email](#input\_service\_account\_email) | The email address of the service account to attach to the instance. If not provided, the default Compute Engine service account will be used. | `string` | `null` | no |
-| <a name="input_tags"></a> [tags](#input\_tags) | A list of network tags to attach to the instance. | `set(string)` | `[]` | no |
+| <a name="input_name"></a> [name](#input\_name) | A unique name for the instance, required by GCE. Must be 1-63 characters long and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])`. Changing this forces a new resource to be created. | `string` | n/a | yes |
+| <a name="input_service_account"></a> [service\_account](#input\_service\_account) | The email of the GCP service account to assign to the instance.<br/><br/>A dedicated, minimal service account should always be created and provided<br/>here. Do not use the Compute Engine default service account<br/>(PROJECT\_NUMBER-compute@developer.gserviceaccount.com) — it has project-wide<br/>editor permissions and represents a significant privilege escalation risk if an<br/>instance is compromised. | `string` | n/a | yes |
+| <a name="input_zone"></a> [zone](#input\_zone) | The zone in which to create the instance. If not provided, the provider zone is used. | `string` | n/a | yes |
+| <a name="input_attached_disks"></a> [attached\_disks](#input\_attached\_disks) | Additional persistent disks to create and attach to the instance, or to attach<br/>from an existing source. Each disk is keyed by name.<br/><br/>(Required) name - Unique name for the disk resource, required by GCE.<br/>(Required) size - Disk size in GB.<br/><br/>(Optional) description - Human-readable description of the disk.<br/>(Optional) device\_name - Name under which the disk is exposed inside the instance at `/dev/disk/by-id/google-DEVICE_NAME`. Defaults to the disk name.<br/>(Optional) source - Name or `self_link` of the existing disk, image, or snapshot to use. Required when `source_type` is attach, image, or snapshot.<br/><br/>(Optional) source\_type - How to provision the disk. Defaults to `attach`. One of:<br/>  `attach` - Attach an existing disk, image, or snapshot referenced by source.<br/>  `image` - Create a new disk initialised from the image named in source.<br/>  `snapshot` - Create a new disk restored from the snapshot named in source.<br/><br/>(Optional) options - The options to use for this disk.<br/>  (Optional) mode - Attachment mode. `READ_WRITE` (default) or `READ_ONLY`.<br/>  (Optional) type - Disk type. One of `pd-standard`, `pd-ssd`, `pd-balanced`, or `pd-extreme`. Defaults to `pd-ssd`. | <pre>list(object({<br/>    description = optional(string)<br/>    device_name = optional(string)<br/>    name        = string<br/>    size        = number<br/>    source      = optional(string)<br/>    source_type = optional(string, "attach")<br/>    options = optional(<br/>      object({<br/>        mode = optional(string, "READ_WRITE")<br/>        type = optional(string, "pd-ssd")<br/>      }),<br/>      {<br/>        mode = "READ_WRITE"<br/>        type = "pd-ssd"<br/>      }<br/>    )<br/>  }))</pre> | `[]` | no |
+| <a name="input_boot_disk"></a> [boot\_disk](#input\_boot\_disk) | Boot disk configuration. Exactly one of initialization\_params or source must be<br/>set.<br/><br/>(Optional) auto\_delete - Whether to delete the boot disk when the instance is deleted. Defaults to true.<br/>(Optional) source - The name or `self_link` of an existing disk to attach as the boot disk. Mutually exclusive with `initialization_params`.<br/><br/>(Optional) initialization\_params - Parameters for a new disk created with the instance. Mutually exclusive with `source`.<br/>  (Optional) image - The image from which to initialise the disk. Accepts `self_link`, `projects/PROJECT/global/images/IMAGE`, `family/FAMILY`, or short forms. Defaults to the latest Debian 12 (Bookworm) image.<br/>  (Optional) size - Disk size in GB. Defaults to 20.<br/>  (Optional) type - Disk type. One of pd-standard, pd-ssd, pd-balanced, or pd-extreme. Defaults to pd-ssd. | <pre>object({<br/>    auto_delete = optional(bool, true)<br/>    source      = optional(string)<br/>    initialization_params = optional(object({<br/>      image = optional(string, "projects/debian-cloud/global/images/family/debian-12")<br/>      size  = optional(number, 20)<br/>      type  = optional(string, "pd-ssd")<br/>    }))<br/>  })</pre> | <pre>{<br/>  "initialization_params": {}<br/>}</pre> | no |
+| <a name="input_description"></a> [description](#input\_description) | A human-readable description of the instance resource. | `string` | `null` | no |
+| <a name="input_hostname"></a> [hostname](#input\_hostname) | A custom hostname for the instance. Must be a fully qualified DNS name and RFC-1035-valid — a series of labels 1-63 characters long matching `[a-z]([-a-z0-9]*[a-z0-9])`, joined with periods, not exceeding 253 characters in total. Changing this forces a new resource to be created. | `string` | `null` | no |
+| <a name="input_labels"></a> [labels](#input\_labels) | User defined resource labels to assign to the instance. | `map(string)` | `{}` | no |
+| <a name="input_machine_type"></a> [machine\_type](#input\_machine\_type) | The Compute Engine machine type for the instance, e.g. `e2-medium`, `n2-standard-2`. See https://cloud.google.com/compute/docs/machine-resource for available types. | `string` | `"e2-medium"` | no |
+| <a name="input_metadata"></a> [metadata](#input\_metadata) | User-defined key/value metadata pairs to make available from within the instance. Merged with the module's required security metadata — caller-supplied values take precedence for non-reserved keys. | `map(string)` | `{}` | no |
+| <a name="input_network_interfaces"></a> [network\_interfaces](#input\_network\_interfaces) | Network interfaces to attach to the instance. At least one interface must be<br/>provided. For each interface, at least one of network or subnetwork must be set.<br/><br/>(Optional) external\_access - Whether to assign a public IP (NAT) to this interface. Defaults to false. Avoid enabling this on instances in private clusters or subnets without a Cloud NAT gateway.<br/>(Optional) internal\_address - Static private IP address. If not set, GCP assigns one automatically.<br/>(Optional) nat\_address - Static external IP to use when `external_access` is true. If not set, an ephemeral IP is assigned automatically.<br/>(Optional) network - Name or `self_link` of the VPC network. If not provided, inferred from subnetwork.<br/>(Optional) subnetwork - Name or `self_link` of the subnetwork. If not provided, inferred from network. | <pre>list(object({<br/>    external_access  = optional(bool, false)<br/>    internal_address = optional(string)<br/>    nat_address      = optional(string)<br/>    network          = optional(string)<br/>    subnetwork       = optional(string)<br/>  }))</pre> | `[]` | no |
+| <a name="input_oauth_scopes"></a> [oauth\_scopes](#input\_oauth\_scopes) | Additional GCP API OAuth scopes granted to the instance service account, merged with the module's required baseline scopes. Additional scopes are typically only needed when workloads use Application Default Credentials rather than Workload Identity, which is discouraged. | `set(string)` | `[]` | no |
+| <a name="input_project_id"></a> [project\_id](#input\_project\_id) | The ID of the GCP project in which to create the instance. Defaults to the provider project if not set. | `string` | `null` | no |
+| <a name="input_running"></a> [running](#input\_running) | Whether the instance should be running. When false, the instance is kept in a `TERMINATED` state. Useful for cost management in non-production environments. | `bool` | `true` | no |
+| <a name="input_tags"></a> [tags](#input\_tags) | Network tags to attach to the instance. Used to identify the instance for applicable firewall rules and network routes. | `set(string)` | `[]` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| <a name="output_instance_id"></a> [instance\_id](#output\_instance\_id) | The server-assigned unique identifier of the instance. |
+| <a name="output_external_ip"></a> [external\_ip](#output\_external\_ip) | The external IP address of the first network interface, if one is assigned. Null when external\_access is false on the first interface. |
+| <a name="output_id"></a> [id](#output\_id) | The server-assigned unique identifier of the instance. |
+| <a name="output_internal_ip"></a> [internal\_ip](#output\_internal\_ip) | The internal IP address of the first network interface. Use this for service configurations, DNS records, or firewall rules that reference the instance directly. |
+| <a name="output_name"></a> [name](#output\_name) | The name of the instance as known to the GCP API. Use this when referencing the instance from other resources. |
+| <a name="output_self_link"></a> [self\_link](#output\_self\_link) | The URI of the instance. Use this to reference the instance in other GCP resources such as instance groups, load balancer backends, and IAM bindings. |
 <!-- pyml enable md013,md022,md033 -->
 <!-- END_TF_DOCS -->

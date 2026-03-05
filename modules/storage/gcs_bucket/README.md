@@ -77,8 +77,8 @@ module "my_bucket" {
 | <a name="input_requester_pays"></a> [requester\_pays](#input\_requester\_pays) | Enable requester pays for the bucket. | `bool` | `false` | no |
 | <a name="input_retention_policy"></a> [retention\_policy](#input\_retention\_policy) | Retention policy for the bucket. | <pre>object({<br/>    retention_period = number<br/>    is_locked        = optional(bool)<br/>  })</pre> | `null` | no |
 | <a name="input_storage_class"></a> [storage\_class](#input\_storage\_class) | Storage class for the bucket. | `string` | `"STANDARD"` | no |
-| <a name="input_uniform_bucket_level_access"></a> [uniform\_bucket\_level\_access](#input\_uniform\_bucket\_level\_access) | Enable uniform bucket-level access for the bucket. | `bool` | `false` | no |
-| <a name="input_versioning"></a> [versioning](#input\_versioning) | Enable versioning for the bucket. | `bool` | `false` | no |
+| <a name="input_uniform_bucket_level_access"></a> [uniform\_bucket\_level\_access](#input\_uniform\_bucket\_level\_access) | Enable uniform bucket-level access for the bucket. | `bool` | `true` | no |
+| <a name="input_versioning"></a> [versioning](#input\_versioning) | Enable versioning for the bucket. Enabled by default to protect against accidental or malicious deletions. | `bool` | `true` | no |
 | <a name="input_website"></a> [website](#input\_website) | Static website configuration for the bucket. | <pre>object({<br/>    main_page_suffix = optional(string)<br/>    not_found_page   = optional(string)<br/>  })</pre> | `null` | no |
 
 ## Outputs
